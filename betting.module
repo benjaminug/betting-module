@@ -1,0 +1,2915 @@
+<?php
+/**
+* (c) 2009 Petr 'kecinzer' Řezníček
+*/
+
+/**
+* Implementace hook_help
+* 
+* @param mixed $path
+* @param mixed $arg
+*/
+function betting_help($path, $arg) {
+  switch ($path) {
+    case 'admin/help#betting':
+    case 'admin/betting':
+      $output = '<p>' . t('Betting system module is tool for course betting. Adds new node types - one for games and one for abonents (who attending to games). 
+        To create a betting game you need  to  first define some things. At first the eventualities - all possibilities how game can end. The next is kind of sport, 
+        that is released by taxonomy module <a href="@taxonomy">here</a>.', array('@taxonomy' => url('admin/content/taxonomy'))) . '</p>';
+      $output .= '<p>' . t('And of course you need create and first abonents, that are attending in this game.') . '</p>';
+      $output .= '<p>' . t('When the game is created with all needed values, users can bet on it (if they have needed amount of points), until game begin.') . '</p>';
+      $output .= '<p>' . t('When game is over with result, administrator have to put this result to game. Based on inserted results are then assigned won points to users.') . '</p>';
+      $output .= '<p>' . t('Most of setting are placed here.') . '</p>';
+      return $output;
+    case 'admin/betting/eventuality':
+      $output = '<p>' . t('Here you can add or edit all betting games eventualities. There are two categories in eventualites. First is for games with two abonents (single match) and 
+      second for games with more than two abonents (tournaments). So every single eventuality must have value, that defines for what count of abonents belongs to.') . '</p>';
+      $output .= '<p>' . t('You can also order eventualitis by set them weight or single drag and drop here and then save.') . '</p>';
+      return $output;
+    case 'admin/betting/assignment':
+      $output = '<p>' . t('This using for simplification of putting result into system. Define how eventuality is assigned to a entered points or abonent position.') . '</p>';
+      $output .= '<p>' . t('So you don\'t have to fill all right eventualities in ended game, but only points or abonents order.') . '</p>';
+      return $output;
+  }
+}
+
+/**
+* implementation of hook_menu()
+* 
+*/
+function betting_menu() {
+  $items = array();
+  
+  $items['betting/add-to-ticket/%'] = array(
+    'title' => 'Add to ticket',
+    'page callback' => 'betting_add_to_ticket',
+    'page arguments' => array(2),
+    'access callback' => 'betting_add_to_ticket_access',
+    'access arguments' => array(2),
+    'type' => MENU_CALLBACK,
+    'file' => 'betting.ticket.inc',
+  );
+  $items['betting'] = array(
+    'title' => 'Betting menu',
+    'page callback' => 'betting_start',
+    'access arguments' => array('access content'),
+  );
+  $items['betting/current-ticket'] = array(
+    'title' => 'Active ticket',
+    'page callback' => 'betting_current_ticket_route',
+    'access callback' => 'user_access',
+    'access arguments' => array('bet on games'),
+    'file' => 'betting.ticket.inc',
+    'weight' => -10,
+  );
+  $items['betting/tickets'] = array(
+    'title' => 'All tickets',
+    'page callback' => 'betting_tickets',
+    'access callback' => 'user_access',
+    'access arguments' => array('bet on games'),
+    'file' => 'betting.ticket.inc',
+    'weight' => -8,
+  );
+  $items['betting/tickets/%betting_ticket'] = array(
+    'title callback' => 'betting_ticket_title',
+    'title arguments' => array(2),
+    'page callback' => 'betting_ticket_show',
+    'page arguments' => array(2),
+    'access callback' => 'betting_access',
+    'access arguments' => array(2),
+    'type' => MENU_CALLBACK,
+    'file' => 'betting.ticket.inc',
+  );
+  // Listing games that are offered for betting etc.
+  $items['betting/offer'] = array(
+    'title' => 'Games offer',
+    'page callback' => 'betting_games_view',
+    'page arguments' => array('offer'),
+    'access arguments' => array('access content'),
+    'weight' => -6,
+  );
+  $items['betting/pending'] = array(
+    'title' => 'Pending games',
+    'page callback' => 'betting_games_view',
+    'page arguments' => array('pending'),
+    'access arguments' => array('access content'),
+    'weight' => -4,
+  );
+  $items['betting/results'] = array(
+    'title' => 'Results',
+    'page callback' => 'betting_games_view',
+    'page arguments' => array('results'),
+    'access arguments' => array('access content'),
+    'weight' => -2,
+  );
+  $items['add-course/%betting_add_course/%'] = array(
+    'title callback' => 'betting_add_course_title',
+    'title arguments' => array(1),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('betting_add_course', 1),
+    'load arguments' => array(2),
+    'access callback' => 'betting_add_course_access',
+    'access arguments' => array(1),
+    'type' => MENU_CALLBACK,
+    'file' => 'betting.admin.inc',
+  );
+  // elements administration
+  $items['admin/betting'] = array(
+    'title' => 'Betting system',
+    'description' => 'All settings for Betting system.',
+    'position' => 'left',
+    'page callback' => 'system_admin_menu_block_page',
+    'access arguments' => array('access administration pages'),
+    'file' => 'system.admin.inc',
+    'file path' => drupal_get_path('module', 'system'),
+  );
+  // Dragging eventualities vyčoruji blocks
+  $items['admin/betting/eventuality'] = array(
+    'title' => 'Eventuality',
+    'description' => 'Manages eventuality.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('betting_admin_eventuality'),
+    'access arguments' => array('administer eventuality'),
+    'file' => 'betting.admin.inc',
+  );
+  $items['admin/betting/eventuality/list'] = array(
+    'title' => 'List',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -10,
+  );
+  $items['admin/betting/eventuality/add'] = array(
+    'title' => 'Add eventuality',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('betting_admin_eventuality_add'),
+    'access arguments' => array('administer eventuality'),
+    'file' => 'betting.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+  );
+  $items['admin/betting/eventuality/edit/%betting_eventuality'] = array(
+    'title callback' => 'betting_eventuality_title',
+    'title arguments' => array(4),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('betting_admin_eventuality_add', 4),
+    'access arguments' => array('administer eventuality'),
+    'file' => 'betting.admin.inc',
+    'type' => MENU_CALLBACK,
+  );
+  // Assignment of contingencies at the correct order
+  $items['admin/betting/assignment'] = array(
+    'title' => 'Eventuality Assignment',
+    'description' => 'Assign eventuality to position.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('betting_admin_assignment'),
+    'access arguments' => array('administer eventuality assignment'),
+    'file' => 'betting.admin.inc',
+  );
+  $items['admin/betting/assignment/list'] = array(
+    'title' => 'List',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -10,
+  );
+  $items['admin/betting/assignment/add'] = array(
+    'title' => 'Add assignment',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('betting_admin_assignment_form'),
+    'access arguments' => array('administer eventuality assignment'),
+    'file' => 'betting.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+  );
+  $items['admin/betting/assignment/edit/%betting_admin_assignment_add'] = array(
+    'title' => 'Edit assignment',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('betting_admin_assignment_form', 4),
+    'access arguments' => array('administer eventuality assignment'),
+    'file' => 'betting.admin.inc',
+    'type' => MENU_CALLBACK,
+  );
+  // address for obtaining the kind of sport and the type of games via AJAX
+  $items['betting/get-sports-values/%'] = array(
+    'title' => 'Get data for sports',
+    'page callback' => 'betting_get_sports_values',
+    'page arguments' => array(2),
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+  
+  return $items;
+}
+
+/**
+* Implementation of hook_menu_alter().
+* 
+* @param mixed $items
+*/
+function betting_menu_alter(&$items) {
+  $items['admin/content/taxonomy/%taxonomy_vocabulary/add/term']['access callback'] = 'betting_taxonomy_access';
+  $items['admin/content/taxonomy/%taxonomy_vocabulary/add/term']['access arguments'] = array(3);
+}
+
+function betting_taxonomy_access($vocabulary) {
+  $sort_vid = betting_get_vid('sort');  
+  if ($vocabulary->vid == $sort_vid) {
+    return FALSE;
+  }
+  else {
+    return TRUE;
+  }
+}
+
+/**
+* Implementation of hook_init()
+* 
+*/
+function betting_init() {
+  drupal_add_css(drupal_get_path('module', 'betting') .'/betting.css');
+}
+
+function betting_perm() {
+  return array(
+    'create abonent',
+    'delete own abonent',
+    'delete any abonent',
+    'edit own abonent',
+    'edit any abonent',
+    'create game',
+    'delete own game',
+    'delete any game',
+    'edit own game',
+    'edit any game',
+    'add points to users',
+    'bet on games',
+    'administer eventuality',
+    'administer eventuality assignment'
+  );
+}
+
+function game_access($op, $node, $account) {
+  $is_author = $account->uid == $node->uid;  
+  switch ($op) {
+    case 'create':
+      return user_access('create game', $account);
+    case 'update':
+      return user_access('edit own game', $account) && $is_author || user_access('edit any game', $account);
+    case 'delete':
+      return user_access('delete own game', $account) && $is_author || user_access('delete any game', $account);
+  }
+}
+
+function abonent_access($op, $node, $account) {
+  $is_author = $account->uid == $node->uid;  
+  switch ($op) {
+    case 'create':
+      return user_access('create abonent', $account);
+    case 'update':
+      return user_access('edit own abonent', $account) && $is_author || user_access('edit any abonent', $account);
+    case 'delete':
+      return user_access('delete own abonent', $account) && $is_author || user_access('delete any abonent', $account);
+  }
+}
+
+function betting_start() {
+  $output = t('This menu contains all needed items for betting. You can find here current (not sent) ticket, all sent tickets and other stuf like actual offer or game results.');
+  
+  return $output;
+}
+
+/**
+* The user has permission to view earlier sent a ticket ?
+* 
+* @param mixed $tid
+*/
+function betting_access($tid) {
+  if (user_access('bet on games')) {
+    global $user;  
+    $row = db_fetch_object(db_query('SELECT uid FROM {betting_ticket} WHERE tid = %d', $tid->tid));
+    if ($user->uid == $row->uid || $user->uid == 1) {
+      return TRUE;
+    }
+    else {
+      return FALSE;
+    }  
+  }
+  return FALSE;
+}
+
+/**
+* Verify that the user can add the item to the ticket
+* 
+* @param mixed $cid
+*/
+function betting_add_to_ticket_access($cid) {
+  global $user;
+  
+  if (user_access('bet on games')) {
+    // Node ID , which is trying to add
+    $nid = db_result(db_query('SELECT nid FROM {betting_courses} WHERE cid = %d', $cid));
+    // I need to find out whether I have been on the ticket descendants or parents - it then I can not vote - creation Hook
+    // If the field contains any value - FALSE - return , it is FALSE
+    if (count(module_invoke_all('to_ticket_access', $nid))) {
+      return FALSE;
+    }
+    if (!$user->ticket[$nid]) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+function betting_add_course_access() {
+  return TRUE;
+}
+
+/**
+* Implementation hook_theme - without this function do not work theme_
+* 
+*/
+function betting_theme() {
+  return array(
+    'betting_current_ticket' => array(
+      'arguments' => array('form' => NULL),
+    ),
+    'betting_form_courses' => array(
+      'arguments' => array('form' => NULL),
+    ),
+    'betting_form_result' => array(
+      'arguments' => array('form' => NULL),
+    ),
+    'betting_form_result_two' => array(
+      'arguments' => array('form' => NULL),
+    ),
+    'dateselect' => array(
+      'arguments' => array('element' => NULL),
+    ),
+    'betting_admin_eventuality' => array(
+      'arguments' => array('form' => NULL),
+    ),
+    'betting_admin_assignment' => array(
+      'arguments' => array('form' => NULL),
+    ),
+    'betting_add_course_table' => array(
+      'arguments' => array('form' => NULL),
+    ),
+    'betting_current_step' => array(
+      'arguments' => array('form' => NULL),
+    ),
+    'betting_abonent_aliases' => array(
+      'arguments' => array('form' => NULL),
+    ),
+    'betting_game_inlist' => array(
+      'arguments' => array('node' => NULL),
+      'template' => 'game_inlist',
+    ),
+    'betting_current_ticket_in_block' => array(
+      'arguments' => array('form' => NULL),
+    ),
+    'next_link' => array(
+      'arguments' => array('url' => NULL, 'name' => NULL, 'title' => NULL),
+    ),
+  );
+}
+
+// Auxiliary functions to retrieve needed data that are used in other positions
+
+/**
+* I return required for the function of the object betting_ticket_show that it has as an argument .
+* 
+* @param mixed $tid
+* @return object
+*/
+function betting_ticket_load($tid) {
+  static $ticket;
+  if (!$ticket) {
+    $ticket = db_fetch_object(db_query('SELECT * FROM {betting_ticket} WHERE tid = %d', $tid));
+  }
+  return $ticket;
+}
+
+function betting_ticket_title($ticket) {
+  return t('Ticket no. @id (@time)', array('@id' => $ticket->tid, '@time' => format_date($ticket->time)));
+}
+
+/**
+* I'll come back for needed building form betting_admin_assignment_add,
+* where as an argument
+* 
+* @param mixed $asid
+*/
+function betting_admin_assignment_add_load($pos) {
+  static $assignment;
+  if (!$assignment) {
+    $result = db_query('SELECT pos, eid FROM {betting_assignment} WHERE pos = %d', $pos);
+    while ($row = db_fetch_object($result)) {
+      $assignment->eids[$row->eid] = $row->eid;
+      if (!$assignment->pos) $assignment->pos = $row->pos;
+    }
+  }
+  return $assignment;
+}
+
+/**
+* SQL query to retrieve information for adding special courses
+* 
+*/
+function game_course_load_query() {
+  return 'SELECT c.time, c.course, e.result, e.description, n.title
+    FROM {betting_courses} c
+    INNER JOIN {betting_eventuality} e ON e.eid = c.eid
+    INNER JOIN {node} n ON n.nid = c.nid
+    WHERE c.nid = %d AND c.eid = %d AND c.aid = %d ORDER BY c.time DESC';
+}
+
+function betting_add_course_load($nid, $args) {
+  static $course;
+  if (!$course) {
+    $arg = explode('-', $args);
+    // Lists all the courses eventuality $ eid for participants $aid
+    // then also I do some caption ;)
+    $node = node_load($nid);
+    $query = module_invoke($node->type, 'course_load_query');
+    $result = db_query($query, $nid, $arg[0], $arg[1]);
+    while ($row = db_fetch_object($result)) {
+      if (!$course) {
+        $course->result = $row->result;
+        $course->nodetitle = $row->title;
+      }
+      $courses[] = $row;
+    }
+    $course->type = $node->type;
+    $course->list = $courses;
+  }
+  return $course;
+}
+
+function betting_add_course_title($course) {
+  return t('Add new course on') . ' ' . $course->nodetitle . ' ' . t('for eventuality') . ' ' . $course->result;
+}
+
+function betting_eventuality_load($eid) {
+  static $eventuality;
+  if (!$eventuality) {
+    $eventuality = db_fetch_object(db_query('SELECT * FROM {betting_eventuality} WHERE eid = %d', $eid));
+  }
+  return $eventuality;
+}
+
+function betting_eventuality_title($eventuality) {
+  return t('Edit eventuality') . ' ' . $eventuality->result . ' (' . $eventuality->description . ')';
+}
+
+/**
+* Implementace hook_elements
+* Form your own type of item.
+* 
+*/
+function betting_elements() {
+  return array('dateselect' => array(
+    '#input' => TRUE,
+    '#process' => array('betting_dateselect_process'),
+    '#element_validate' => array('betting_dateselect_validate'),
+    ),
+  );
+}
+
+/**
+* defines type 'dateselect'
+* 
+* @param mixed $element
+*/
+function betting_dateselect_process($element) {
+  // Default to current date
+  if (empty($element['#value'])) {
+    $time = time();
+    $element['#value'] = array(
+      'day' => format_date($time, 'custom', 'd'),
+      'month' => format_date($time, 'custom', 'm'),
+      'year' => format_date($time, 'custom', 'Y'),
+      'hour' => format_date($time, 'custom', 'H'),
+      'minute' => format_date($time, 'custom', 'i'),
+    );
+  }
+  // if the default value in UNIX format must be converted !
+  elseif (is_numeric($element['#value'])) {
+    $element['#value'] = betting_explode_date($element['#value']);
+  }
+  $element['#tree'] = TRUE;
+  // Determine the order of day, month, year in the site's chosen date format.
+  $format = variable_get('date_format_short', 'm/d/Y - H:i');
+  $sort = array();
+  $sort['day'] = max(strpos($format, 'd'), strpos($format, 'j'));
+  $sort['month'] = max(strpos($format, 'm'), strpos($format, 'M'));
+  $sort['year'] = strpos($format, 'Y');
+  $sort['hour'] = max(strpos($format, 'h'), strpos($format, 'H'), strpos($format, 'g'), strpos($format, 'G'));
+  $sort['minute'] = strpos($format, 'i');
+  asort($sort);
+  $order = array_keys($sort);
+  // Output multi-selector for date.
+  foreach ($order as $type) {    
+    unset($options, $maxlength);
+    switch ($type) {
+      case 'day':
+        $form_type = 'select';
+        for ($i = 1; $i <= 31; $i++) {
+          $i = ($i < 10) ? '0'.$i : $i;
+          $options[$i] = $i;
+        }
+        break;
+      case 'month':
+        $options = _betting_dateselect_months();
+        $form_type = 'select';
+        break;
+      case 'year':
+        $form_type = 'select';
+        for ($i = ($element['#value']['year'] - 4); $i < ($element['#value']['year'] + 4); $i++) $options["$i"] = "$i";
+        break;
+      case 'hour':
+        $form_type = 'select';
+        for ($i = 0; $i <= 23; $i++) {
+          $i = ($i < 10) ? '0'.$i : $i;
+          $options[$i] = $i;
+        }
+        asort($options);
+        break;
+      case 'minute':
+        $form_type = 'select';
+        for ($i = 0; $i <= 59; $i++) {
+          $i = ($i < 10) ? '0'.$i : $i;
+          $options[$i] = $i;
+        }
+        asort($options);
+        break; 
+    }    
+    $parents = $element['#parents'];
+    $parents[] = $type;
+    $element[$type] = array(
+      '#type' => $form_type,
+      '#default_value' => $element['#value'][$type],
+      '#attributes' => $element['#attributes'],
+    );
+    if (isset($options)) {
+      $element[$type]['#options'] = $options;
+    }
+  }
+  return $element;
+}
+
+function betting_dateselect_validate($element, &$form_state) {
+  // monitoring the correct data 
+  if ($element['#value']['day'] == '31') {
+    switch ($element['#value']['month']) {
+      case '02':
+      case '04':
+      case '06':
+      case '09':
+      case '11':
+        form_error($element, t('You have to specify a valid date of  when the game begins.'));
+    }
+  }
+  if ($element['#value']['day'] > '29' && $element['#value']['month'] == '02') {
+    form_error($element, t('You have to specify a valid date of game start.'));
+  }
+  if ($element['#value']['day'] == '29' && $element['#value']['month'] == '02') {
+
+    if (!($element['#value']['year'] % 4)) {
+      if (($element['#value']['year'] % 100) || !($element['#value']['year'] % 400)) {
+        $leap = TRUE;
+      }
+    }
+    if (!$leap) {
+      form_error($element, t('You have to specify a valid date of when the game starts.'));
+    }
+  }
+  return $element;
+}
+
+/**
+* Template for the form element dateselect
+* 
+* @param mixed $element
+*/
+function theme_dateselect($element) {
+  return theme('form_element', $element, '<div class="container-inline">'. $element['#children'] .'</div>');
+}
+
+function betting_user($op, &$edit, &$account, $category = NULL) {
+  switch ($op) {
+    case 'login':
+    case 'load':
+      $user = db_fetch_object(db_query('SELECT points FROM {betting_users} WHERE uid = %d', $account->uid));
+      if ($user) {
+        $account->betting_points = $user->points;
+      }
+    break;
+    // displaying the number of points on the user's profile
+    case 'view':
+      $account->content['betting'] = array(
+        '#type' => 'fieldset',
+        '#title' => t('Betting'),
+      );
+      $account->content['betting']['points'] = array(
+        '#type' => 'user_profile_item',
+        '#title' => t('Points'),
+        '#value' => $account->betting_points,
+      );
+    break;
+    // editing form
+    case 'form':
+    case 'register':
+      if (user_access('add points to users')) {
+        $form['betting'] = array(
+          '#type' => 'fieldset',
+          '#title' => t('Betting options'),
+        );
+        $form['betting']['betting_points'] = array(
+          '#type' => 'textfield',
+          '#title' => t('Points'),
+          '#description' => t('Number of points.'),
+          '#default_value' => $edit['betting_points'],
+          // '#parents' => array('betting_points'),
+        );        
+        return $form;
+      }
+    break;
+    case 'validate':
+      if (user_access('add points to users')) {
+        if (!is_numeric($edit['betting_points'])) {
+          form_set_error('points', t('Number of points has to be the number.'));
+        }
+      }
+    break;
+    case 'insert':
+    case 'update':
+      if ($edit['betting_points'] || $account->betting_points) {
+        $points = ($edit['betting_points']) ? $edit['betting_points'] : $account->betting_points;
+        _betting_save_user_points($account->uid, $points);
+      }
+      // This is strange behavior of Drupal , if I add an element to the form , and it now automatikcy stored in DAT
+      unset($edit['betting_points']);
+    break;
+    // deleting additional data from the DB
+    case 'delete':
+      db_query('DELETE FROM {betting_users} WHERE uid = %d', $account->uid);
+      $result = db_query('SELECT tid FROM {betting_ticket} WHERE uid = %d', $account->uid);
+      while ($row = db_result($result)) {
+        $tids[] = $row;
+      }
+      db_query('DELETE FROM {betting_ticket} WHERE tid IN (%s)', implode(',', $tids));
+      db_query('DELETE FROM {betting_tips} WHERE tid IN (%s)', implode(',', $tids));
+    break;
+  }
+}
+
+/**
+* Implementation of hook_node_info(). 
+*/
+function betting_node_info() {
+  return array(
+    'game' => array(
+      'name' => t('Game'),
+      'module' => 'game',
+      'description' => t('Game, that have abonents.'),
+      'has_title' => TRUE,
+      'title_label' => t('Name of the game'),
+      'has_body' => TRUE,
+      'body_label' => 'Description',
+      'locked' => TRUE,
+    ),
+    'abonent' => array(
+      'name' => t('Abonent'),
+      'module' => 'abonent',
+      'description' => t('Abonents who can attend to a game.'),
+      'has_title' => TRUE,
+      'title_label' => t('Name'),
+      'has_body' => TRUE,
+      'body_label' => 'Description',
+      'locked' => TRUE,
+    )
+  );
+}
+
+function betting_block($op = 'list', $delta = 0, $edit = array()) {
+  switch ($op) {
+    case 'list':
+      $blocks[0]['info'] = t('Your points');
+      $blocks[0]['cache'] = BLOCK_NO_CACHE;
+      $blocks[1]['info'] = t('Betting ticket');
+      $blocks[1]['cache'] = BLOCK_NO_CACHE;
+      return $blocks;
+    case 'view':
+      if (user_access('bet on games')) {
+        switch($delta) {
+          case 0:
+            $block['subject'] = t('Your points');
+            $block['content'] = _betting_load_user_points();
+            break;
+          case 1:
+            // I show everywhere except big ticket
+            if (arg(0) != 'betting' || arg(1) != 'current-ticket') {
+              $block['subject'] = t('Betting ticket');
+              $block['content'] = drupal_get_form('betting_current_ticket_in_block') . theme('next_link', url('betting/current-ticket'), t('Complete ticket'), t('View complete current ticket.'));;
+            }
+            break;
+        }
+      }
+      return $block;
+  }
+}
+
+function betting_current_ticket_in_block($form_state) {
+  module_load_include('inc', 'betting', 'betting.ticket');
+  $form = betting_current_ticket($form_state);
+  $form['#action'] = url('betting/current-ticket');
+  $form['points']['#size'] = 6;
+  /*$form['#validate'][] = '';
+  $form['#submit'][] = '';*/
+  // I still have to adjust the size of the box points
+  return $form;
+}
+
+function theme_betting_current_ticket_in_block($form) {  
+  $header = array(
+    t('Title'),
+    t('Bet'),
+    t('Course'),
+  );
+  if (isset($form['title']) && is_array($form['title'])) {
+    foreach (element_children($form['title']) as $key) {
+      $rows[] = array(
+        drupal_render($form['title'][$key]),
+        drupal_render($form['abonent'][$key]),
+        drupal_render($form['course'][$key]),
+      );
+    }
+    $rows[] = array(
+      array('data' => t('Total course:'), 'colspan' => '2'),
+      '<b>'.drupal_render($form['total_course']).'</b>',
+    );
+  }
+  else  {
+    $rows[] = array(array('data' => t('You have no tips in current open ticket.'), 'colspan' => '3'));
+  }  
+  $output = theme('table', $header, $rows, array('class' => 'betting-block-view'));
+  $output .= drupal_render($form['points']);
+  $output .= drupal_render($form['submit']);
+  return $output;
+}
+
+function theme_next_link($url, $name, $title) {
+  return '<div class="more-link">'. t('<a href="@link" title="@title">@name</a>', array('@link' => check_url($url), '@title' => $title, '@name' => $name)) .'</div>';
+}
+
+/**
+* Generating graphical step
+* 
+* @param mixed $form
+*/
+function theme_betting_current_step($form) {
+  $header = array(
+    t('1st') . ' ' . t('step'),
+    '',
+    t('2nd') . ' ' . t('step'),
+    '',
+    t('3rd') . ' ' . t('step'),
+  );
+  $description[1] = t('In this step you have to fill name of the game and select sport and game type.');
+  $description[2] = t('In this step you have to select all abonents that attending this game.');
+  if ($form['#description']) {
+    $description[3] = t('In this step you can fill another courses and final results.');
+  }
+  else {
+    $description[3] = t('In this step you have to finaly fill courses.');
+  }
+  // generate 
+  for ($i = 1; $i <= 3; $i++) {
+    $row_temp['data'] = $description[$i];
+    if ($i == $form['#value']) {
+      $row_temp['class'] = 'active-step';
+    }
+    $row[] = $row_temp;
+    if ($i < 3) {
+      $row[] = array('data' => '&raquo;', 'class' => 'betting-step-arrow');
+    }
+    unset($row_temp);
+  }
+  $rows[] = $row;  
+  $output = theme('table', $header, $rows, array('class' => 'betting-step'));
+  
+  return $output;
+}
+
+/**
+* Obtaining the required TID according to the specified VID .
+* Since the variable taxonomy can take three different forms , it's a little more complicated .
+* 
+* @param mixed $vid
+* @param mixed $taxonomy
+*/
+function betting_get_tid_from_vid($vid, $taxonomy) {
+  foreach ($taxonomy as $id => $data) {
+    if (is_array($data)) {
+      if ($id == $vid) {
+        $tid = $data[0];
+        break;
+      }
+    }
+    elseif (is_object($data)) {
+      if ($id = $data->vid) {
+        $tid = $data->tid;
+        break;
+      }
+    }
+    else {
+      if ($id == $vid) {
+        $tid = $data;
+        break;
+      }
+    }
+  }
+  return $tid;
+}
+
+/**
+* Implementace hook_form pro hru
+* 
+* @param mixed $node
+* @param mixed $form_state
+*/
+function game_form(&$node, $form_state) {
+  $type = node_get_types('type', $node);
+  // performs editing ?
+  $editing = isset($node->nid);
+    
+  if ($node->step) {
+    $step = $node->step;
+  }
+  else {
+    if ($editing) $step = 3;
+    else $step = 1;
+  }
+  
+  // hidden entry form with step
+  $form['step'] = array (
+    '#type' => 'hidden',
+    '#value' => $step,
+  );  
+  // user information , what am I step
+  $form['stepinfo'] = array(
+    '#type' => 'item',
+    '#title' => t('Current step of form'),
+    '#value' => $step,
+    '#description' => $editing,
+    '#weight' => -10,
+    '#theme' => 'betting_current_step',
+  );  
+  // caption
+  $form['title'] = array(
+    '#type' => 'textfield',
+    '#title' => check_plain($type->title_label) . (($step < 3) ? ' ' . _betting_required_value() : ''),
+    '#required' => ($step < 3) ? FALSE : TRUE,
+    '#default_value' => $node->title,
+    '#weight' => -2,
+  );
+  // body
+  $form['body_filter']['#weight'] = 1;
+  $form['body_filter']['body'] = array(
+    '#type' => 'textarea',
+    '#title' => check_plain($type->body_label),
+    '#default_value' => $node->body,
+    '#required' => FALSE,
+  );
+  $form['body_filter']['filter'] = filter_form($node->format);
+  // must be completed with the date of the fight and I zařátku min . and max . Deposit
+  if ($step == 3 || $editing) {
+    $form['game'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Additional Game information'),
+      '#collapsible' => TRUE,
+      '#collapsed' => $editing ? TRUE : FALSE,
+      '#weight' => 5,
+    );
+    $form['game']['start'] = array(
+      '#type' => 'dateselect',
+      '#title' => t('When will the game begin'),
+      '#default_value' => $node->start,
+      '#required' => TRUE,
+    );
+    $form['game']['limit_min'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Minimal bet limit') . ' ' . _betting_required_value(),
+      '#maxlength' => 10,
+      '#description' => t('How much points can user bet on this game at least.'),
+      '#default_value' => $node->limit_min,
+    );
+    $form['game']['limit_max'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Maximal bet limit') . ' ' . _betting_required_value(),
+      '#maxlength' => 10,
+      '#description' => t('How much points can user bet on this game at most.'),
+      '#default_value' => $node->limit_max,
+    );
+  }
+  
+  if ($step > 1 || $editing) {
+    // first loads the necessary ID dictionaries
+    $sport_vid = betting_get_vid('sport');
+    $sort_vid = betting_get_vid('sort');
+    // Obtain the necessary terms - I can do it in odesiálací function, because it is internal
+    // Auxiliary variable ; )
+    $sport_tid = betting_get_tid_from_vid($sport_vid, $node->taxonomy);
+    $sort_tid = betting_get_tid_from_vid($sort_vid, $node->taxonomy);
+    // retrieves information about the new ones that I have to offer more players for one game
+    $specials = _betting_get_specials($sport_tid);
+    // Retrieves information about how much the Subscriber At first pick ( based on categories )
+    // I'm all over it only when creating a node in a second step
+    if ($step == 2) {
+      // Tournament if it will or not tournament but the sport where more than 2 Players
+      if ($sort_tid == _betting_get_sort_type('tournament') || $specials->multi) {
+        $hint = t('In this type of game can play at least 3 abonents.');
+        $min_required_abonents = 3;
+      }
+      else {
+        $hint = t('In this type of game can play exactly 2 abonents.');
+        $min_required_abonents = 2;
+      }
+    }    
+    // Individual game participants .
+    $form['abonent'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Abonents of game'),
+      '#collapsible' => TRUE,
+      '#collapsed' => $editing ? TRUE : FALSE,
+      '#description' => t('Abonents, that attending on game.') . (($hint) ? ' ' . $hint : ''),
+      '#tree' => TRUE,
+      '#weight' => 3,
+    );
+    // First, I pass all the participants filled .
+    $def_value = array('' => t('- None selected -'));
+    $ABONENTS = betting_get_abonents($sport_tid);
+    // I'm excerpting only completed subscribers , those who do not value itself cleared
+    $i = 1;
+    if (isset($node->abonent)) {
+      $node->abonent = array_filter($node->abonent);
+      foreach ($node->abonent as $index => $abonent) {      
+        $form['abonent'][$i] = array(
+          '#type' => 'select',
+          '#title' => t('Abonent %n', array('%n' => $i)),
+          '#default_value' => $abonent,
+          '#attributes' => array('class' => 'abonents'),
+          '#options' => $def_value + $ABONENTS,
+          '#required' => ($i == 1 || $i == 2) ? TRUE : FALSE,
+          '#disabled' => ($step > 2 || $editing) ? TRUE : FALSE,
+        );
+        $i++;
+      }
+    }
+    // if there was ever sent form
+    else {
+      for ($i = 1; $i <= $min_required_abonents; $i++) {
+        $form['abonent'][$i] = array(
+          '#type' => 'select',
+          '#title' => t('Abonent %n', array('%n' => $i)),
+          '#attributes' => array('class' => 'abonents'),
+          '#options' => $def_value + $ABONENTS,
+          '#required' => TRUE,
+        );
+		  }
+    }    
+    // If you are filling subscribers to the tournament , I let adding more
+    if ($min_required_abonents == 3) {      
+      $form['abonent']['next'] = array(
+        '#type' => 'item',
+        '#title' => t('Add more abonents'),
+      );
+      $form['abonent'][$i] = array(
+        '#type' => 'select',
+        '#title' => t('Abonent %n', array('%n' => $i)),
+        '#attributes' => array('class' => 'abonents'),
+        '#options' => $def_value + $ABONENTS,
+      );  
+      $form['abonent']['more_abonent'] = array(
+        '#type' => 'submit',
+        '#value' => t('Add abonent'),
+        '#parents' => array('more_abonent'),
+        '#submit' => array('betting_form_refresh'),
+        '#weight' => 10,
+      );
+    }  
+  }
+  // generating box displaying only the first step , and then only if it is a match - just 2 players
+  if (!$editing && ($step == 1 || ($sort_tid == _betting_get_sort_type('match') && !$specials->multi))) {
+    $form['title_generate'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Generate name of the game automaticaly'),
+      '#description' => t('If you are creating a game with two abonents (match), you can just check this and node title will be generated from abonents (A X B).'),
+      '#default_value' => $node->title_generate,
+      '#weight' => -1,
+      '#disabled' => ($step == 3) ? TRUE : FALSE,
+      '#prefix' => '<div id="title-generate-hiddable">',
+      '#suffix' => '</div>',
+    );
+  }  
+  // Phase 2 - Perform completion courses
+  if ($step > 2 || $editing) {
+    $form['course'] = array(
+      '#type' => 'fieldset',
+      '#theme' => 'betting_form_courses',
+      '#title' => t('Courses to result'),
+      '#collapsible' => TRUE,
+      '#description' => t('Courses for possible result of game.'),
+      '#tree' => TRUE,
+      '#weight' => 8,
+    );
+    // accurate identification of the number of subscribers
+    $abonents = count(array_filter($node->abonent));    
+    // First, select all possibilities depending on the number of players - if they are only 2 , so I choose not solving anything and everything
+    // If the players will be more in the loop offered in individual subscribers and saved him single eventuality to complete the course.
+    if ($sort_tid = _betting_get_sort_type('match')) {
+      $special = _betting_get_specials($sport_tid);
+    }
+    if ($special->tie) {
+      $form['tie'] = array(
+        '#type' => 'hidden',
+        '#value' => $special->tie,
+      );
+      $is_special = TRUE;
+    }
+    else {
+      $is_special = FALSE;
+    }
+    
+    $eventuality = betting_get_eventualities($abonents, $is_special);
+    
+    foreach ($eventuality as $item) {
+      $form['course']['data'][$item->eid] = array(
+        '#type' => 'item',
+        '#title' => $item->result,
+        '#value' => $item->description,
+      );
+    }    
+    foreach (array_filter($node->abonent) as $key => $value) {
+      $form['course']['abonents'][$value] = array(
+        '#value' => $ABONENTS[$value],
+      );
+    }        
+    // Courses will begin listing
+    $TMP_abonents = ($abonents == 2) ? array(0) : array_filter($node->abonent);
+    foreach($TMP_abonents as $key => $value) {
+      // I do this fieldsets list all possibilities of winning ;)
+      foreach ($eventuality as $event) {
+        $form['course']['courses'][$value][$event->eid]['new'] = array(
+          '#type' => 'textfield',
+          '#default_value' => $node->course[$value][$event->eid]['new'],
+          '#maxlength' => 8,
+          '#parents' => array('course',$value,$event->eid,'new'),
+        );
+        // the older results when editing
+        if ($editing && $node->course[$value][$event->eid]['old']) {
+          foreach($node->course[$value][$event->eid]['old'] as $time => $course) {
+            $form['course']['courses'][$value][$event->eid]['old'][$time] = array(
+              '#type' => 'hidden',
+              '#value' => $course,
+              '#parents' => array('course',$value,$event->eid,'old',$time),
+            );
+          }
+        }
+      }
+    }
+	}  
+  // inserting results - yet for three or more players
+  if ($editing) {
+    $abonents = count($node->abonent);    
+    $form['result'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Results'),
+      '#collapsible' => TRUE,
+      '#description' => t('Final result of the game.'),
+      '#tree' => TRUE,
+      '#weight' => 10,
+      '#theme' => ($abonents == 2) ? 'betting_form_result_two' : 'betting_form_result',
+    );    
+    if ($abonents == 2) {
+      // two subscribers lists only the exact outcome of which will generate the correct tips
+      foreach ($node->abonent as $key => $value) {
+        $form['result'][$value]['name'] = array(
+          '#value' => $ABONENTS[$value],
+        );
+        $form['result']['result_points'][$value] = array(
+          '#type' => 'textfield',
+          '#maxlength' => 3,
+          '#size' => 5,
+          '#default_value' => $node->result_points[$value],
+          '#parents' => array('result_points',$value),
+        );
+      }
+      if ($special->tie) {
+        $form['result']['prolongation'] = array(
+          '#type' => 'checkbox',
+          '#default_value' => $node->result['prolongation'],
+        );
+      }
+    }
+    else {
+      // option positions
+      for ($i = 1; $i <= (count($node->abonent) + 5); $i++) {
+        $concrete_pos[$i] = $i;
+      }
+      // not selected positions
+      $concrete_pos['-'] = '-';
+      // DNF participant - before saving must be transformed to -1
+      $concrete_pos[999] = 'N';
+      // At this point must be DNF as "N " and not -1 - for proper alignment
+      // DNF is not 0 and -1 on the grounds that 0 is used for the last place ; )
+      asort($node->result_points);
+      foreach ($node->result_points as $value => $data) {
+        $form['result'][$value]['name'] = array(
+          '#value' => $ABONENTS[$value],
+        );
+        $form['result']['result_points'][$value] = array(
+          '#type' => 'select',
+          '#default_value' => $node->result_points[$value] ? $node->result_points[$value] : array('-'),
+          '#options' => $concrete_pos,
+          '#parents' => array('result_points',$value),
+        );
+      }
+    }    
+  }  
+  return $form;
+}
+
+/**
+* Listing of courses in a table :)
+* 
+* @param mixed $form
+*/
+function theme_betting_form_courses($form) {
+  $header_item = array();
+  $header_item[] = t('Abonents');
+  foreach (element_children($form['data']) as $eid) {
+    $header_item[] = array('data' => $form['data'][$eid]['#title'], 'title' => $form['data'][$eid]['#value']);
+    unset($form['data'][$eid]);
+  }
+  $header = $header_item;
+  
+  // pro 2 abonenty
+  if (count(element_children($form['abonents'])) == 2) {
+    foreach (element_children($form['abonents']) as $key) {
+      $abonents[] = drupal_render($form['abonents'][$key]);
+    }
+  }
+  
+  foreach (element_children($form['courses']) as $aid) {
+    $row = array();
+    $row[] = ($abonents) ? implode(' - ', $abonents) : drupal_render($form['abonents'][$aid]);
+    foreach (element_children($form['courses'][$aid]) as $eid) {
+      $old_courses = '';
+      if (element_children($form['courses'][$aid][$eid]['old'])) { // pokud existují nějaké starší kurzy
+        foreach (element_children($form['courses'][$aid][$eid]['old']) as $time) {
+          $old_courses .= '<div title="'.$time.'">'.$form['courses'][$aid][$eid]['old'][$time]['#value'].'</div>';
+          // unset($form['courses'][$aid][$eid]['old'][$i]);
+        }
+      }
+      $row[] = drupal_render($form['courses'][$aid][$eid]['new']) . $old_courses;      
+    }
+    $rows[] = $row;  
+  }
+  $output = theme('table', $header, $rows, array('class' => 'betting-edit'));
+  $output .= drupal_render($form);
+  return $output;
+}
+
+function theme_betting_form_result($form) {
+  $header = array('', t('Abonent'), t('Position'));
+  drupal_add_tabledrag('betting-position', 'order', 'sibling', 'concrete-weight', NULL, NULL, FALSE);
+  
+  foreach (array_filter(element_children($form), 'is_numeric') as $key) {
+    $form['result_points'][$key]['#attributes']['class'] = 'concrete-weight';
+    $row = array('');
+    $row[] = drupal_render($form[$key]['name']);
+    $row[] = drupal_render($form['result_points'][$key]);
+    $rows[] = array('data' => $row, 'class' => 'draggable');
+  }
+  $output = theme('table', $header, $rows, array('id' => 'betting-position'));
+  $output .= drupal_render($form);
+  return $output;  
+}
+
+function theme_betting_form_result_two($form) {
+  foreach (element_children($form) as $key) {
+    $header[] = drupal_render($form[$key]['name']);
+    $row[] = drupal_render($form['result_points'][$key]);
+  }
+  if ($form['prolongation']) {
+    $header[] = t('In overtime');
+    $row[] = drupal_render($form['prolongation']);
+  }
+  $output = theme('table', $header, array($row));
+  $output .= drupal_render($form);
+  return $output;  
+}
+
+/**
+* hook_validate - kontrola zadaných dat
+* 
+* @param mixed $node
+* @param mixed $form
+*/
+function game_validate(&$node, &$form) {  
+  if ($node->step > 1) {
+    // musím zjistit, zda nejsou někteří abonenti vybráni víckerát - tato kontrala je jen při vytváření  
+    $node->abonent = array_filter($node->abonent);
+    foreach ($node->abonent as $index => $value) {
+      $abonents[] = $value;
+    }
+    // tohle mi tu přijde úplně zbytečné - ještě projedu
+    // pokud jsou nějací abonenti vyplnění, provedu validaci
+    if ($abonents) {
+      $uniques = array_unique($abonents);
+      $differences = array_diff_key($abonents, $uniques);
+      // pokud naleznu nějaké rozdíly
+      if (count($differences)) {
+        foreach ($differences as $key => $value) {
+          form_set_error('abonent]['.($key+1), t('Abonent %n is the same like another one. That\'s not possible!',array('%n' => $key+1)));
+        }
+      }
+    }
+  }
+  // pokud není zaškrtnuto vygenerovat nadpis, musí být políčko povinné
+  if ($node->step < 3 && !$node->title_generate && !$node->title) {
+    form_set_error('title', t('Name of the game is required.'));
+  }  
+  if ($node->step > 2) {
+    // hodnoty kontroluji pouze v případě, náhledu, nebo ukládání
+    if ($node->op == t('Preview') || $node->op == t('Save')) {
+      if (!is_numeric($node->limit_min) || $node->limit_min < '0') {
+        form_set_error('limit_min', t('Minimal limit has to be a number greater than zero.'));
+      }
+      if (!is_numeric($node->limit_max) || $node->limit_max < '0') {
+        form_set_error('limit_max', t('Maximal limit has to be a number greater than zero.'));
+      }
+      if ($node->limit_min >= $node->limit_max) {
+        form_set_error('limit_min', t('Minimal limit has to be smaller number than Maximal limit .'));
+      }
+    }
+    $abonents = count($node->abonent);
+    // musím zkontrolovat, zda nejsou nějaké tipy výsledné stejné u více abonentů
+    // zde se ještě musí udělat podmínka, pokud je výsledek vůbec zadán
+    
+    if ($node->nid && ($node->op == t('Preview') || $node->op == t('Save'))) {
+      // musím zjistit, zda jsou už zaznamenány nějaké výsledky, pokud ano, musím provést kontrolu zadaných dat!
+      $count_results = db_result(db_query('SELECT COUNT(*) FROM {betting_results} WHERE nid = %d', $node->nid));
+      // pokud ještě výsledky nebyly vloženy, musím otestovat správnost zadání
+      // toto stačí dělat pouze pro 2 účastníky, více jsou řešeny selectem
+      if ($abonents == 2) {
+        foreach ($node->result_points as $aid => $value) {
+          // musí to být celé kladné číslo
+          if ((!empty($value) && (!is_numeric($value) || $value < '0')) || $count_results && empty($value)) {
+            form_set_error('result_points]['.$aid, t('Points have to be a number greater than zero.'));
+          }
+          $points[] = $value;
+        }
+        // vyplněné obě nuly - nepovolená operace
+        // pokud budou hodnoty stejné a výsledek nemůže skončit remízou -> chyba
+        if ($points['0'] && $points['1'] && ($points['0'] == $points['1'] && !$node->tie)) {
+          form_set_error('', t('Typed result points are not valid.'));
+        }
+      }
+      else {
+        foreach ($node->result_points as $aid => $value) {
+          // Pokud najdu nějakou hodnotu s pomlčkou, hned musím hlásit chybu - každý účastník musí mít zvlenou pozici.
+          if ($value == '-') {
+            $dashes++;
+            if ($count_results) {
+              // existují již nějaké výsledky - nepřípustná situace
+              form_set_error('result_points]['.$aid, t('All abonents have to be on position.'));
+            }
+          }
+        }
+        // pokud vyplňuji výsledky, musím vyplnit vše a ne jen něco!
+        if ($dashes && $dashes < $abonents) {
+          form_set_error('', t('All abonents have to be on position.'));
+        }
+      }       
+    }
+  }
+}
+
+/**
+* hook_insert - vložení dodatečných dat do tabulek.
+* 
+* @param mixed $node
+*/
+function game_insert($node) {
+  /* vložit se musí data do tabulek:
+  betting_attendance
+  betting_courses
+  musí se také ošetřit, pokud nejsou vyplněné kurzy
+  */
+  foreach ($node->abonent as $key => $value) {
+  	db_query('INSERT INTO {betting_attendance} (nid, aid, pos) VALUES (%d, %d, %d)', $node->nid, $value, $key);
+	}
+  // vložení dalších informací
+  db_query('INSERT INTO {betting_node} (nid, start, limit_min, limit_max) VALUES (%d, %d, %d, %d)', $node->nid, betting_unix_date_format($node->start), $node->limit_min, $node->limit_max);
+  // vložení kurzů
+  betting_insert_courses($node);
+}
+
+/**
+* hook_update - akce prováděné při úpravě uzlu
+* 
+* @param mixed $node
+*/
+function game_update($node) {
+  // vložení dalších informací
+  db_query('UPDATE {betting_node} SET start = %d, limit_min = %d, limit_max = %d WHERE nid = %d', betting_unix_date_format($node->start), $node->limit_min, $node->limit_max, $node->nid);
+  betting_insert_courses($node);
+  if (betting_proceed_results($node)) {
+    betting_mark_tips_on_node($node, $node->result);
+  }
+}
+
+/**
+* Zpracování výsledků z konkrétních hodnot.
+* Na toto je právě tabulka betting_assignment
+* 
+* @param mixed $node
+*/
+function betting_proceed_results(&$node) {
+  // nejdříve bude nutná podmínka, která zjistí, jeslti jsou vůbec nějaké resulty vyplněny ;)
+  // pak budu také zjišťovat, jestli nejsou náhodou zaškrtnuté stejné výsledky ;)  
+  $has_points = TRUE;
+  foreach ($node->result_points as $pos => $points) {
+    // body nejsou vyplněny (pro 2 hráče)
+    if ($points == '') {
+      $has_points = FALSE;
+    }
+    // body nejsou vyplněny pro více hráčů
+    if ($points == '-') {
+      $has_points = FALSE;
+    }
+  }
+  if ($has_points) {
+    // pro více jak 2 abonenty ověřím vyplněné eventuality
+    $node->result = betting_get_results_from_points($node->result_points, $node->result['prolongation'], $node->tie);
+    
+    // uložím do DB konkrétní výsledek
+    foreach ($node->result_points as $aid => $points) {
+      db_query('UPDATE {betting_attendance} SET result = %d WHERE nid = %d AND aid = %d', $points, $node->nid, $aid);
+    }
+    // vyberu aktuální výsledky uložené do DB!
+    $result = db_query('SELECT eid, aid FROM {betting_results} WHERE nid = %d', $node->nid);
+    while ($row = db_fetch_object($result)) {
+      // $results[$row->aid][$row->eid] = $row->eid;
+      $results[$row->aid][$row->eid] = $row->eid;
+    }    
+    // pouze pokud budou jiné výsledky provedu nějaké operace
+    if ($results == $node->result) {
+      // výsledky jsou stejné jako vložené
+      return FALSE;
+    }
+    else {
+      // smažu staré výsledky a vložím nové
+      db_query("DELETE FROM {betting_results} WHERE nid = %d", $node->nid);
+      foreach ($node->result as $aid => $res) {
+        foreach ($res as $eid) {
+          db_query('INSERT INTO {betting_results} (nid, aid, eid) VALUES (%d, %d, %d)', $node->nid, $aid, $eid);
+        }
+      }
+      return TRUE;
+    }
+    
+  }
+  else {
+    return FALSE;
+  }
+}
+
+/**
+* Pro 2 hráče - pošlu konkrétní výsledek a získám správné tipy
+* musím ještě zjistit, zda se mohou vyskytovat nerozhodné výsledky
+* 
+* @param mixed $node
+*/
+function betting_get_results_from_points($results, $prolong, $tie) {
+  $abonents = count($results);
+  $special = array(0,1);
+  // pro 2 hráče musím nejdřív zjistit správnou pozici pro získávání eventualit :)
+  if ($abonents == 2) {
+    foreach ($results as $res) {
+      $player[] = $res;
+    }
+    // vyhrál první
+    if ($player['0'] > $player['1']) {
+      // je to v prodloužení (10, 0)
+      if ($prolong) {
+        $results = array(-110);
+      }
+      // (1, 12)
+      else {
+        $results = array(-11);
+      }
+    }
+    // remíza (0)
+    elseif ($player['0'] == $player['1'] && $tie) {
+      $results = array(-10);
+    }
+    // vyhrál druhý
+    elseif ($player['0'] < $player['1']) {
+      // v prodloužení (0, 02)
+      if ($prolong) {
+        $results = array(-102);
+      }
+      // (2, 12)
+      else {
+        $results = array(-12);
+      }
+    }
+    if ($tie) {
+      $special = array(0,1);
+    }
+    else {
+      $special = array(0);
+    }
+  } // mám pozice pro 2 hráče
+  else {
+    // musím nahradit poslední místo nulou
+    foreach ($results as $aid => $pos) {
+      if ($pos == $abonents) {
+        $results[$aid] = '0';
+      }
+    }
+  }
+  $sql = 'SELECT a.pos, a.eid FROM {betting_assignment} a
+    INNER JOIN {betting_eventuality} e ON a.eid = e.eid
+    WHERE e.abonents <= %d AND a.pos IN (%s) AND e.special IN (%s)';
+  $result = db_query($sql, $abonents, implode(',',$results), implode(',',$special));
+  while ($row = db_fetch_object($result)) {
+    foreach ($results as $aid => $pos) {
+      if ($pos == $row->pos) {
+        $results_eventuality[$aid][$row->eid] = $row->eid;
+      }
+    }    
+  }
+  return $results_eventuality;
+}
+
+/**
+* hook_delete - vymaže dodatečná data při odstranění uzlu
+* 
+* @param mixed $node
+*/
+function game_delete(&$node) {
+  // vymazání všech účastníků
+  db_query('DELETE FROM {betting_attendance} WHERE nid = %d', $node->nid);
+  // vymazání všech výsledků
+  db_query('DELETE FROM {betting_results} WHERE nid = %d', $node->nid);
+  // vymazání dodatečných společných dat všech her
+  betting_delete_game($node->nid);
+}
+
+/**
+* Další operace při mazání hry - musí se skontrolovat, zda není nikde na lístku atd.
+* 
+* @param mixed $node
+*/
+function betting_game_may_delete($nid) {
+  // zjistím, zda hra již není u někoho na odeslaném lístku
+  if ($on_ticket = db_result(db_query('SELECT COUNT(tip.cid) FROM {betting_courses} c LEFT JOIN {betting_tips} tip ON c.cid = tip.cid WHERE c.nid = %d', $nid))) {
+    return t('This game can not be deleted, because users have tipped on it.');
+  }
+  else {
+    if (is_array($messages = module_invoke_all('game_delete_conditions', $nid))) {
+      // pokud je to pole, vrátím první prvek
+      return $messages[0];
+    }
+    // v odstranění nic nebrání
+    else {
+      return 0;
+    }
+  }
+}
+
+/**
+* Mazání dat, které mají všechny hry spolčné.
+* Dodatečně je vytvořen hook pro další operace mazání.
+* 
+* @param mixed $nid
+*/
+function betting_delete_game($nid) {
+  // vymazání všech kurzů
+  db_query('DELETE FROM {betting_courses} WHERE nid = %d', $node->nid);
+  // odstranění všech ostatních relací hry ;)
+  module_invoke_all('game_delete', $node->nid);
+}
+
+/**
+* hook_load - načte dodatečné informace do objektu $node.
+* 
+* @param mixed $node
+*/
+function game_load($node) {
+  // edituji právě nod?
+  $EDIT = (arg(0) == 'node' && is_numeric(arg(1)) && arg(2) == 'edit') ? TRUE : FALSE;
+  
+  // další data
+  $append = db_fetch_object(db_query('SELECT start, limit_min, limit_max FROM {betting_node} WHERE nid = %d', $node->nid));
+  // nejdříve získám všechny hráče, co se účastní
+  $result = db_query("SELECT a.aid, a.pos, n.title FROM {betting_attendance} a INNER JOIN {node} n ON n.nid = a.aid WHERE a.nid = %d ORDER BY a.pos ASC", $node->nid);
+  while ($row = db_fetch_object($result)) {
+    // výpis pro editaci - správný formát
+    $abonents[$row->pos] = $row->aid;
+    // výpis pro zobrazení
+    $abonents_view[$row->aid] = $row->title;
+	}	
+  // načtení kurzů
+	$result = db_query("SELECT c.cid, c.eid, c.aid, c.time, c.course FROM {betting_courses} c INNER JOIN {betting_eventuality} e ON c.eid = e.eid WHERE nid = %d ORDER BY e.weight, e.eid, c.time DESC", $node->nid);
+	while ($row = db_fetch_object($result)) {
+	  if ($EDIT) {
+      $courses[$row->aid][$row->eid]['old'][$row->time] = sprintf("%.6g", $row->course);
+    }
+    else {
+      if (!is_array($courses[$row->aid][$row->eid]['new'])) {
+        $courses[$row->aid][$row->eid]['new'] = array('cid' => $row->cid, 'course' => sprintf("%.6g", $row->course));
+      }
+    }
+	}  
+  // získám aktuální výsledky opět musím zvlášť pro 2 a více -> nemusím, protože v DB je to uloženo také pod nulou, přesně jak to potřebuji vypisovat
+  $result = db_query('SELECT r.eid, r.aid, e.result FROM {betting_results} r
+    INNER JOIN {betting_eventuality} e ON r.eid = e.eid
+    WHERE nid = %d', $node->nid);
+  while ($row = db_fetch_object($result)) {
+    $results[$row->aid][$row->eid] = $row->eid;
+    // ještě je třeba zjistit, zda byla hra dohrána v prodloužení
+    // hra byla dohrána v prodloužení, v případě že nedopadla 12!
+    if ($row->result === '12') {
+      $not_prolong = 1;
+    }
+  }
+  // nakonec ještě potřebuji konkrétní pořadí či body, to je fakt hard-core tohle
+  $result = db_query('SELECT aid, result FROM {betting_attendance} WHERE nid = %d ORDER BY pos ASC', $node->nid);
+  while ($row = db_fetch_object($result)) {
+    // $concrete[$row->aid] = $row->result;
+    $results_points[$row->aid] = $row->result;
+  }
+  // ještě musím načít $node->tie, pokud je to match ;)
+  if (count($abonents) == 2) {
+    $sport_vid = betting_get_vid('sport');
+    if ($tie = db_result(db_query('SELECT s.tie FROM {term_node} t
+      INNER JOIN {term_data} d ON d.tid = t.tid
+      LEFT JOIN {betting_special} s ON t.tid = s.tid
+      WHERE t.nid = %d AND d.vid = %d', $node->nid, $sport_vid))) {
+      $append->tie = 1;
+      if (!$not_prolong && $results_points[$abonents[1]] != $results_points[$abonents[2]]) {
+        $results['prolongation'] = 1;
+      }
+    }
+  }  
+  $append->abonent = $abonents;
+  $append->abonent_view = $abonents_view;
+	$append->course = $courses;
+  // $append->start = ($EDIT) ? betting_explode_date($append->start) : $append->start;
+  $append->result = $results;
+  $append->result_points = $results_points;
+  
+  return $append;
+}
+
+/**
+* Získání pole s eventualitami podle zadaných kurzů
+* 
+* @param mixed $courses
+*/
+function betting_eventuality_from_course($courses) {
+  // získání eventualit podle zadaných kurzů
+  foreach ($courses as $e) {
+    foreach ($e as $eid => $data) {
+      $event[] = $eid;
+    }
+    break;
+  }  
+  // vysosání potřebných eventualit
+  $result = db_query('SELECT eid, result, description FROM {betting_eventuality} WHERE eid IN (%s) ORDER BY weight', implode(',', $event));
+  while ($row = db_fetch_object($result)) {
+    $eventuality[$row->eid] = array(
+      'name' => $row->result,
+      'description' => $row->description,
+    );
+  }
+  return $eventuality;
+}
+
+/**
+* Ověření, zda uživatel může hlasovat
+* 
+* @param mixed $node
+* @return string
+*/
+function betting_bet_access($node) {
+  global $user;
+  if ($node->onviewlist && ($node->result || time() >= $node->start)) {
+    return 1;
+  }
+  // získam uživateslké body
+  if ($user->uid) {
+    $points = _betting_load_user_points($user->uid);
+  }  
+  // nejdříve zjistím, zda je možné přidávat tip do tiketu
+  if (user_access('bet on games')) {
+    if ($node->result || count(module_invoke_all('have_results', $node->nid))) {
+      $message = t('This game has ended.');
+    }
+    elseif (time() >= $node->start) {
+      $message = t('This game has already started.');
+    }
+    elseif ($user->ticket[$node->nid] || count(module_invoke_all('to_ticket_access', $node->nid))) {
+      $message = t('Your current ticket already has a tip from this game.');
+    }
+    elseif ($points < $node->limit_min) {
+      $message = t('You don\'t have enough points for tip in this game.');
+    }
+  }
+  else {
+    $message = t('Only registered users can bet.');
+  }  
+  return $message;
+}
+
+/**
+* Potřebuji načít názvy abonentů podle jejich AID
+* přičemž musím zařídit dobré řazení
+* 
+* @param mixed $abonents
+*/
+function _betting_abonents_view($abonents, $nid) {
+  $result = db_query('SELECT nid, title FROM {node} WHERE nid IN (%s)', implode(',', $abonents));
+  while ($row = db_fetch_object($result)) {
+    $abonent_unsort[$row->nid] = $row->title;
+  }
+  // provedu srovnání abonentů dle základního tvaru
+  foreach ($abonents as $aid) {
+    $abonent[$aid] = $abonent_unsort[$aid];
+  }  
+  return $abonent;
+}
+
+/**
+* Funkce sloužící k profiltrování dat před zobrazením, nebo uložením
+* 
+* @param mixed $node
+*/
+function betting_node_filter_data($node) {
+  // filtrování kurzů
+  foreach ($node->course as $aid => $courses) {
+    foreach ($courses as $eid => $course) {
+      if ($course['new']) {
+        $COURSE[$aid][$eid]['new'] = $course['new'];
+      }
+      if (is_array($course['old'])) {
+        $COURSE[$aid][$eid]['old'] = $course['old'];
+      }
+    }
+  }
+  // filtrování výsledků
+  if (is_array($node->result_points)) {
+    foreach ($node->result_points as $aid => $points) {
+      if ($points) {
+        $RESULT_POINTS[$aid] = $points;
+      }
+    }
+    $node->result_points = $RESULT_POINTS;
+  }
+  if ($node->result['prolongation'] == 0) {
+    unset($node->result['prolongation']);
+  }
+  $node->course = $COURSE;
+  return $node;
+}
+
+/**
+* hook_view - zobrazení dat na stránce s uzlem.
+* 
+* @param mixed $node
+* @param mixed $teaser
+* @param mixed $page
+*/
+function game_view($node, $teaser = FALSE, $page = FALSE) {
+  $node = node_prepare($node, $teaser);
+  // rozlišení zobrazování a náhledu - pro vyšší rychlost!
+  if ($node->preview) {
+    $node = betting_node_filter_data($node);
+    // výsledky - dobře srovnané!
+    if (count($node->result_points) == count($node->abonent)) $node->result = betting_get_results_from_points($node->result_points, $node->result['prolongation'], $node->tie);
+    $node->abonent_view = _betting_abonents_view($node->abonent, $node->nid);
+    $node->start = betting_unix_date_format($node->start);
+  }
+  $node->MESSAGE = betting_bet_access($node);  
+  $node->content['game'] = array(
+    '#value' => game_table_tips_view($node, t('Abonents')),
+    '#weight' => 5,
+  );
+  if ($node->result) {
+    $node->content['result'] = array(
+      '#value' => game_table_results_view($node),
+      '#weight' => 7,
+    );
+  }
+  if (is_string($node->MESSAGE)) {
+    $node->content['message'] = array(
+      '#value' => $node->MESSAGE,
+      '#prefix' => '<div class="betting-status">',
+      '#suffix' => '</div>',
+      '#weight' => 10,
+    );
+  }
+  return $node;
+}
+
+/**
+* Konstrukce tipovací tabulky u hry
+*/
+function game_table_tips_view($node, $header_title, $link = FALSE) {
+  $ADMIN = user_access('edit any game');
+  // načtu možné výsledky
+  $eventuality = betting_eventuality_from_course($node->course);
+  // hlavička tabulky
+  $header[] = (($link) ? l($header_title, 'node/'.$node->nid) : $header_title) . ($ADMIN ? betting_single_add_edit_link($node->nid) : '');
+  foreach ($eventuality as $eid => $event) {
+    if ($node->result[0][$eid]) $header[] = array('data' => $event['name'], 'class' => 'betting-win', 'title' => $event['description']);
+    else $header[] = array('data' => $event['name'], 'title' => $event['description']);
+  }
+  $header[] =  t('Start time');
+  
+  $TMP_abonents = (count($node->abonent_view) == 2) ? array(0) : $node->abonent_view;  
+  // procházím všechny účastníky - pro 2 to projede jen jednou, pro více tolikrát, kolik je účastníků
+  foreach ($TMP_abonents as $key => $value) {
+    if ($value) { // pokud víc jak 2, tak vypíšu konkrétního abonenta
+      $row[] = l($value, 'node/'.$key); 
+    }
+    else { // vypíšu jen ty 2 proti sobě - klasický hra X VS. Y
+      foreach ($node->abonent_view as $aid => $aname) {
+        $abonents[] = l($aname, 'node/'.$aid);
+      }    
+      $row[] = implode(' - ', $abonents);
+    }
+    /**
+    * rocházím všechny vyplněné kurzy a doplňuji k eventualitám - neprocházím primárně eventuality -
+    * protože nemusí být u všech kurzy
+    */
+    foreach ($node->course[$key] as $eid => $item) {
+      // vypisuji data při zobrazení
+      if (is_array($item['new'])) {
+        $row_temp['data'] = !$node->MESSAGE ? l($item['new']['course'],'betting/add-to-ticket/'.$item['new']['cid'], array('query' => drupal_get_destination())) : $item['new']['course'];
+        if ($ADMIN && !$node->MESSAGE) {
+          $row_temp['data'] .= betting_single_add_course_link($node->nid, array($eid, $key));
+        }
+      }
+      // výpis během náhledu při vytváření, nebo editaci
+      else {
+        if (!$item['new'] && $item['old']) {
+          $row_temp['data'] = current($item['old']);
+        }
+        // zobrazuji pouze, pokud je vyplněná nějaká hodnota :)
+        elseif ($item['new']) {
+          $row_temp['data'] = $item['new'];
+        }
+      }      
+      if ($node->result[$key][$eid]) $row_temp['class'] = 'betting-win';
+      if ($row_temp) {
+        $row[] = $row_temp;
+        unset($row_temp);
+      }
+    }
+    $row[] = format_date($node->start, 'custom', 'd.m. / H:i');
+    $rows[] = $row;
+    unset($row);
+  }
+  
+  $output = theme('table', $header, $rows, array('class' => 'betting-view'));
+  // vrátím pole s hlavičkou a tělěm tabulky
+  return $output;
+}
+
+/**
+* Konstrukce tabulky výsledků
+* 
+*/
+function game_table_results_view($node) {
+  if (count($node->abonent_view) == 2) {
+    if ($node->result['prolongation']) $ot = ' (PP)';
+    $header_result = array(t('Score'));
+    $rows_result[] = array(implode(' : ', $node->result_points) . $ot);
+    $output = theme('table', $header_result, $rows_result, array('class' => 'betting-result'));
+  }
+  else {
+    $header_result = array(
+      t('Position'),
+      t('Abonent'),
+    );
+    asort($node->result_points);
+    foreach ($node->result_points as $aid => $pos) {
+      if ($pos == 999) $pos = 'N';
+      $rows_result[] = array(
+        $pos,
+        l($node->abonent_view[$aid], 'node/'.$aid),
+      );
+    }
+    $output = theme('table', $header_result, $rows_result, array('class' => 'betting-view'));
+  }  
+  return $output;
+}
+
+function betting_games_view($type) {
+  $GAME_LIST = implode(',', betting_gametypes(1));
+  // typ nemusím posílat, joinují se vždy stejné položky
+  $JOIN_LIST = implode(' ', module_invoke_all('games_view_join_list'));
+  $WHERE_LIST = implode(' ', module_invoke_all('games_view_where_list', $type));
+  if ($tid = arg(2)) {
+    $taxonomy = ' AND t.tid = '.$tid;
+  }
+  $nowtime = time();
+  // základní dotaz bez zapnutých modulů :)
+  switch ($type) {
+    case 'offer':  
+      $query = "SELECT DISTINCT n.nid
+        FROM {node} n
+        INNER JOIN {betting_node} bn ON n.nid = bn.nid
+        INNER JOIN {term_node} t ON n.vid = t.vid
+        LEFT JOIN {betting_results} r ON n.nid = r.nid
+        $JOIN_LIST
+        WHERE (n.type IN ($GAME_LIST))$WHERE_LIST AND n.status <> 0 AND ISNULL(r.nid) AND (bn.start > $nowtime)$taxonomy ORDER BY bn.start ASC";
+      break;
+    case 'pending':
+      $query = "SELECT DISTINCT n.nid
+        FROM {node} n
+        INNER JOIN {betting_node} bn ON n.nid = bn.nid
+        INNER JOIN {term_node} t ON n.vid = t.vid
+        LEFT JOIN {betting_results} r ON n.nid = r.nid
+        $JOIN_LIST
+        WHERE (n.type IN ($GAME_LIST))$WHERE_LIST AND n.status <> 0 AND ISNULL(r.nid) AND (bn.start < $nowtime)$taxonomy ORDER BY bn.start ASC";
+      break;
+    case 'results':
+     $query = "SELECT DISTINCT n.nid
+        FROM {node} n
+        INNER JOIN {betting_node} bn ON n.nid = bn.nid
+        INNER JOIN {term_node} t ON n.vid = t.vid
+        LEFT JOIN {betting_results} r ON n.nid = r.nid
+        $JOIN_LIST
+        WHERE (n.type IN ($GAME_LIST)) AND (r.nid <> 0 $WHERE_LIST) AND n.status <> 0$taxonomy ORDER BY bn.start DESC";
+      break;
+  }
+  $query_count = ereg_replace('DISTINCT n.nid', 'COUNT(DISTINCT(n.nid))', $query);
+  $result = pager_query($query, 10, 0, $query_count);
+  while ($row = db_fetch_object($result)) {
+    $node = node_load($row->nid);
+    $output .= betting_game_view($node);
+  }
+  $output .= theme('pager', NULL, 10, 0);
+  return $output;
+}
+
+/**
+* Obdoba node_view, ale v kompaktnějším tvaru :)
+* 
+* @param mixed $node
+*/
+function betting_game_view($node) {
+  $node->onviewlist = 1;
+  $node = node_build_content($node, $teaser, $page);
+  $node->body = drupal_render($node->content);  
+  // Allow modules to modify the fully-built node.
+  node_invoke_nodeapi($node, 'alter', $teaser, $page);  
+  
+  return theme('betting_game_inlist', $node);
+}
+
+function template_preprocess_betting_game_inlist(&$variables) {
+  $node = $variables['node'];
+  foreach ($node->taxonomy as $term) {
+    if (is_object($term)) {
+      $links['taxonomy_term_'. $term->tid] = array(
+        'title' => $term->name,
+        'href' => 'betting/' . arg(1) . '/' . $term->tid,
+        'attributes' => array('rel' => 'tag', 'title' => strip_tags($term->description))
+      );
+    }
+  }
+  $variables['taxonomy'] = $links;
+  $variables['terms'] = theme('links', $variables['taxonomy'], array('class' => 'links inline'));
+  // tady musím vygenerovat potřebné proměnné pro zobrazení ;)
+  $variables['title'] = l($node->title, 'node/' . $node->nid);
+  $variables['content'] = $node->body;
+  // umožním ještě rozlišit templaty pro jednotlivé typy her
+  $variables['template_files'][] = 'game_inlist-'. $node->type;
+}
+
+function betting_form_alter(&$form, $form_state, $form_id) {
+  $type = preg_replace('/_node_form/', '', $form_id);
+  // pokud budu mít otevřený formulář s termíny ke Sportu, tak ho musím upravit ;)
+  // přijde mi to tedy jako prasárna, ale nevím o ničem lepším (nařp něco jako hook_form
+  
+  // pokud upravuji nebo vytvářím TERM
+  if ($form_id == 'taxonomy_form_term') {
+    if ($form['#vocabulary']['vid'] == betting_get_vid('sport') && !$form_state['confirm_delete']) {
+      $def_values = array();
+      // pokud provádím editaci, načtu dodatečná data z DB ;)
+      if ($form['#term']['tid']) {
+        $special = db_fetch_object(db_query('SELECT tie, multi FROM {betting_special} WHERE tid = %d', $form['#term']['tid']));
+        if ($special->tie) {
+          $def_values[] = 'tie';
+        }
+        if ($special->multi) {
+          $def_values[] = 'multi';
+        }
+      }
+      $form['game'] = array(
+        '#type' => 'fieldset',
+        '#title' => t('Special options for sport'),
+        '#collapsible' => TRUE,
+        '#weight' => 1,
+      );
+      $form['game']['game_options'] = array(
+        '#type' => 'select',
+        // '#title' => t('Special options for sport'),
+        '#default_value' => $def_values,
+        '#options' => array(
+          '' => t('- None selected -'),
+          'tie' => t('Game can have tie result'),
+          'multi' => t('Game for more than two abonents'),
+        ),      
+      );
+      $form['submit']['#weight'] = 2;
+      if ($form['delete']) {
+        $form['delete']['#weight'] = 2;
+      }
+      $form['advanced']['parent']['#access'] = FALSE;
+      $form['advanced']['relations']['#access'] = FALSE;
+    }
+    // přidám resp. uberu tlačítko na smazání ;)
+    elseif ($form['#vocabulary']['vid'] == betting_get_vid('sport') || $form['#vocabulary']['vid'] == betting_get_vid('sort')) {
+      $cannot_be_deleted = db_result(db_query('SELECT COUNT(*) FROM {term_node} WHERE tid = %d', $form['#term']['tid']));
+      if ($cannot_be_deleted || $form['#vocabulary']['vid'] == betting_get_vid('sort')) {
+        unset($form['delete']);
+      }
+    }    
+  }
+  // pokud upravuji nebo vytvářím slovník
+  elseif ($form_id = 'taxonomy_form_vocabulary' && ($form['vid']['#value'] == betting_get_vid('sport') || $form['vid']['#value'] == betting_get_vid('sort'))) {
+    $form['help_betting_vocab'] = array(
+      '#value' => t('This is the designated betting vocabulary. Some of the normal vocabulary options have been removed.'),
+      '#weight' => -1,
+    );    
+    $form['settings']['tags']['#disabled'] = TRUE;
+    $form['settings']['multiple']['#disabled'] = TRUE;
+    $form['settings']['required']['#disabled'] = TRUE;
+    $form['settings']['weight']['#disabled'] = TRUE;
+    
+    unset($form['delete']);
+  }
+  // pokouším se smazat uzel
+  elseif ($form_id == 'node_delete_confirm') {
+    $node = $form['#parameters'][2];
+    if (betting_is_gametype($node->type)) {
+      if ($message = betting_game_may_delete($node->nid)) {
+        unset($form['confirm']);
+        unset($form['actions']['submit']);
+        drupal_set_title(t('This game can not be deleted!'));
+        $form['description']['#value'] = $message;
+      }
+    }
+    elseif ($node->type == 'abonent') {
+      if ($message = betting_abonent_may_delte($node->nid)) {
+        unset($form['confirm']);
+        unset($form['actions']['submit']);
+        drupal_set_title(t('This abonent can not be deleted!'));
+        $form['description']['#value'] = $message;
+      }
+    }
+  }
+  // ještě se musí alternovat hromadné mazání!
+  elseif ($form_id == 'node_admin_content' && $form['operation']['#value'] == 'delete') {
+    // $form['#parameters'][1]['post']['operation'] == 'delete'
+    // projedu všechny vybrané nody a pokusím se je otentovat :D
+    foreach (element_children($form['nodes']) as $nid) {
+      // musím načít typ nodu
+      $node = node_load($nid);
+      if (betting_is_gametype($node->type)) {
+        if ($message = betting_game_may_delete($node->nid)) {
+          echo 'tady ne';
+          unset($form['nodes'][$nid]);
+          $reply = 1;
+        }
+      }
+      elseif ($node->type == 'abonent') {
+        if ($message = betting_abonent_may_delte($node->nid)) {
+          unset($form['nodes'][$nid]);
+          $reply = 1;
+        }
+      }
+    }
+    if ($reply) {
+      if (count(element_children($form['nodes'])) == 0) {
+        unset($form['confirm']);
+        unset($form['actions']['submit']);
+        $form['description']['#value'] = t('All nodes are type game or abonent and this nodes can not be deleted, becaues users have its on tickets or abonents attending on games.');
+      }
+      else {
+        $form['description']['#value'] = t('Some nodes (games or abonents) can not be deleted, because users have its on tickets or abonents attending on games.') . '<br />' . $form['description']['#value'];
+      }
+    }
+  }
+  // herní uzel
+  elseif (betting_is_gametype($type)) {
+    // provádím editaci uzlu?
+    $editing = isset($form['nid']['#value']);    
+    // přidám popisek k taxonomy
+    $form['taxonomy']['#weight'] = -3;
+    $form['menu']['#weight'] = 16;
+    $form['#pre_render'] = array();
+    // musím nastavit taxonomii disabled, pokud budu víc jak v prnvím kroku
+    $sport_vid = betting_get_vid('sport');
+    $sort_vid = betting_get_vid('sort');
+    if ($form['step']['#value'] == 1) {
+      // přidám automatické skrývání
+      drupal_add_js(betting_ajax_sports_operations(array('sport' => $sport_vid, 'sort' => $sort_vid)),'inline');
+    }
+    $form['taxonomy']['betting'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Sport and game type'),
+      '#description' => ($form['step']['#value'] == 1 ? t('For next process, you have to select sport and type of the game.') : ''),
+      '#weight' => -3,
+    );
+    foreach ($form['taxonomy'] as $vid => $term) {
+      if ($vid == $sport_vid || $vid == $sort_vid) {
+        $form['taxonomy']['betting'][$vid] = $term;
+        $form['taxonomy']['betting'][$vid]['#parents'] = array('taxonomy', $vid);
+        if ($form['step']['#value'] > 1) {
+          $form['taxonomy']['betting'][$vid]['#disabled'] = TRUE;
+        }
+        unset($form['taxonomy'][$vid]);
+      }
+    }
+    // úspora místa při editaci
+    if ($editing) {
+      $form['taxonomy']['#collapsed'] = TRUE;
+    }
+    // kroky se týkají jen přímo typu game
+    if ($type == 'game') {
+      if ($form['step']['#value'] < 3) {
+        $form['#rebuild'] = TRUE;
+        unset($form['buttons']['submit']);
+        unset($form['buttons']['preview']);
+        // pokus o vlastní button
+        $form['buttons']['next'] = array(
+          '#type' => 'submit',
+          '#value' => t('Next'),
+          '#submit' => array('betting_form_next'),
+        );
+      }
+      elseif (!$editing) {
+        $form['buttons']['change'] = array(
+          '#type' => 'submit',
+          '#value' => t('Reset abonents'),
+          '#submit' => array('betting_form_reset'),
+        );
+      }    
+    }    
+  }
+}
+
+function betting_ajax_sports_operations($VIDs) {
+  $sport_vid = $VIDs['sport'];
+  $sort_vid = $VIDs['sort'];  
+  $other_data = module_invoke_all('ajax_sports');
+  foreach($other_data as $item) {
+    $default_states .= $item['default_state'];
+    $conditions .= $item['conditions'];
+  }  
+  $DATA = 'var sportType = \'failed\';
+    var competitionType = \'failed\';
+    
+    $(document).ready(function() {
+      $("#edit-taxonomy-' . $sport_vid . '").change(sportType_onchange);
+      $("#edit-taxonomy-' . $sort_vid . '").change(competitionType_onchange);
+      
+      $("#title-generate-hiddable").hide("fast");
+      '.$default_states.'
+      if ($("#edit-taxonomy-' . $sport_vid . '").val() != "") {sportType_onchange();}
+      if ($("#edit-taxonomy-' . $sort_vid . '").val() != "") {competitionType_onchange();}
+    });   
+    
+    function sportType_onchange() {
+      var value = $("#edit-taxonomy-' . $sport_vid . '").val();
+      if (value == "") {value = 0;}
+      $.ajax({url: \'' . url('betting/get-sports-values/') . '\' + value, dataType: \'json\', success: function(r){
+        sportType = r;        
+        showHideCourse();       
+      }});  
+    }
+    
+    function competitionType_onchange() {
+      var value = $("#edit-taxonomy-' . $sort_vid . '").val();
+      if (value == "") {value = 0;}
+      $.ajax({url: \'' . url('betting/get-sports-values/') . '\' + value, dataType: \'json\', success: function(r){
+        competitionType = r;
+        showHideCourse();
+      }});  
+    }
+    
+    function showHideCourse() {
+      if (sportType == \'two-teams\') {
+        if (competitionType == "more-teams") {
+          $("#title-generate-hiddable").hide("fast");
+        } else {
+          $("#title-generate-hiddable").show("fast");
+        }
+      } else if(sportType == \'more-teams\') {
+        $("#title-generate-hiddable").hide("fast");
+      } else {
+        $("#title-generate-hiddable").hide("fast");
+        '.$default_states.'
+      }
+      '.$conditions.'
+    }';
+  return $DATA;
+}
+
+function abonent_form(&$node, $form_state) {
+  $type = node_get_types('type', $node);
+  $node->alias = betting_filter_aliases($node->alias);
+  // titulek
+  $form['title'] = array(
+    '#type' => 'textfield',
+    '#title' => check_plain($type->title_label),
+    '#required' => TRUE,
+    '#default_value' => $node->title,
+  );
+  
+  // tělo
+  $form['body_filter']['body'] = array(
+    '#type' => 'textarea',
+    '#title' => check_plain($type->body_label),
+    '#default_value' => $node->body,
+  );
+  $form['body_filter']['filter'] = filter_form($node->format);
+  
+  // aliasy
+  $form['alias'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Aliases'),
+    '#description' => t('Alternative names of abonent.') . '<br />' . t('For delete some aliases, simply check delete - alias will be removed after submit.'),
+    '#theme' => 'betting_abonent_aliases',
+    '#tree' => TRUE,
+  );
+  $i = 1;
+  if ($node->alias) {
+    foreach ($node->alias as $alid => $alias) {
+      if ($alid != 'del') {
+        $alid = ereg_replace('newadd-', 'new-', $alid);
+        $form['alias'][$alid] = array(
+          '#type' => 'textfield',
+          '#default_value' => $alias,
+        );
+        $del[$alid] = '';
+        $i++;
+      }
+    }
+  }
+  $form['alias']['del'] = array(
+    '#type' => 'checkboxes',
+    '#options' => $del,
+  );
+  $form['alias']['newadd-'.$i] = array(
+    '#type' => 'textfield',
+    '#title' => t('New alias'),
+    '#weight' => 2,
+  );
+  $form['alias']['more_alias'] = array(
+    '#type' => 'submit',
+    '#value' => t('Add alias / refresh'),
+    '#parents' => array('more_alias'),
+    '#submit' => array('betting_form_refresh'),
+    '#weight' => 3,
+  );
+  
+  return $form;
+}
+
+function theme_betting_abonent_aliases($form) {
+  $header = array('No.', t('Alias'), t('Delete'));
+  $i = 1;
+  foreach (element_children($form) as $alid) {
+    if (is_numeric($alid) || ereg('new-', $alid)) {
+      $rows[] = array(
+        $i,
+        drupal_render($form[$alid]),
+        drupal_render($form['del'][$alid]),
+      );
+      $i++;
+    }
+  }
+  if (!$rows) {
+    $rows[] = array(array('data' => t('There are no aliases yet.'), 'colspan' => 3)); 
+  }
+  $output = theme('table', $header, $rows);
+  $output .= drupal_render($form);
+  
+  return $output;
+}
+
+function betting_filter_aliases($aliases) {
+  if ($aliases) {
+    foreach ($aliases as $key => $value) {
+      if (!empty($value) && empty($aliases['del'][$key])) {
+        $ALIAS[$key] = $value;
+      }
+    }
+  }
+  return $ALIAS;
+}
+
+function abonent_validate($node, &$form) {
+  // musím zjistit, zda nejsou někteří abonenti vybráni víckerát - tato kontrala je jen při vytváření  
+  $node->alias = array_filter($node->alias);
+  if ($node->alias) {
+    $uniques = array_unique($node->alias);
+    $differences = array_diff_key($node->alias, $uniques);
+    // pokud naleznu nějaké rozdíly
+    if (count($differences)) {
+      foreach ($differences as $key => $value) {
+        form_set_error('alias]['.$key, t('Alias %n is the same like another one. That\'s not possible!',array('%n' => $key)));
+      }
+    }
+  } 
+}
+
+function abonent_insert($node) {
+  $node->alias = betting_filter_aliases($node->alias);
+  if ($node->alias) {
+    foreach ($node->alias as $key => $alias) {
+      if (ereg('new-', $key)) {
+        db_query("INSERT INTO {betting_alias} (aid, alias) VALUES (%d, '%s')", $node->nid, $alias);
+      }
+    }
+  }
+}
+
+function abonent_update($node) {
+  if ($node->alias = betting_filter_aliases($node->alias)) {
+    // tady musím načíst staré aliasy ;)
+    $result = db_query('SELECT * FROM {betting_alias} WHERE aid = %d', $node->nid);
+    while ($row = db_fetch_object($result)) {
+      // pokud bude existovat, tak updatnu
+      if ($node->alias[$row->alid]) {
+        db_query("UPDATE {betting_alias} SET alias = '%s' WHERE alid = %d", $node->alias[$row->alid], $row->alid);
+      }
+      // záznam ve formuláři neni - byl vymazán
+      else {
+        db_query("DELETE FROM {betting_alias} WHERE alid = %d", $row->alid);
+      }
+    }    
+    foreach ($node->alias as $alid => $alias) {
+      // existuje nový alias - vložím ho do DB
+      if (ereg('new-', $alid)) {
+        db_query("INSERT INTO {betting_alias} (aid, alias) VALUES (%d, '%s')", $node->nid, $alias);
+      }
+    }
+  }
+}
+
+function abonent_delete(&$node) {
+  db_query("DELETE FROM {betting_alias} WHERE aid = %d", $node->nid);
+}
+
+function betting_abonent_may_delte($nid) {
+  // pokud bude účastník přiřazen hře, nemohu ho smazat že ;)
+  if ($attendance = db_result(db_query('SELECT COUNT(aid) FROM {betting_attendance} WHERE aid = %d', $nid))) {
+    return t('Abonent can not be deleted, because already have attendance to game(s).');
+  }
+  return 0;
+}
+
+function abonent_load($node) {
+  $result = db_query('SELECT alid, alias FROM {betting_alias} WHERE aid = %d', $node->nid);
+  while ($row = db_fetch_object($result)) {
+    $alias[$row->alid] = $row->alias;
+  }
+  $append->alias = $alias;
+  return $append;
+}
+
+function abonent_view($node, $teaser = FALSE, $page = FALSE) {
+  $node = node_prepare($node, $teaser);
+  if ($node->alias) {
+    $node->content['alias'] = array(
+      '#value' => betting_aliases_view($node->alias),
+      '#weight' => 7,
+    );
+  }
+  return $node;
+}
+
+function betting_aliases_view($aliases) {
+  $header = array(t('Aliases'));
+  foreach ($aliases as $alias) {
+    $rows[] = array(
+      $alias,
+    );
+  }
+  $output = theme('table', $header, $rows, array('class' => 'betting-view'));
+  return $output;
+}
+
+/**
+* Implementace hook_taxonomy().
+* 
+* @param mixed $op
+* @param mixed $type
+* @param mixed $array
+*/
+function betting_taxonomy($op, $type, $array = NULL) {
+  // pokud upravuji termy ve sportovním slovníku
+  if ($array['vid'] == betting_get_vid('sport') && $type == 'term') {
+    switch ($op) {
+      case 'insert':
+      case 'update':
+        if ($array['game_options']['tie'] || $array['game_options']['multi']) {
+          db_query('REPLACE {betting_special} (tid, tie, multi) VALUES (%d, %d, %d)', $array['tid'], $array['game_options']['tie'] ? 1 : 0, $array['game_options']['multi'] ? 1 : 0);
+        }
+      break;
+      case 'delete':
+        db_query('DELETE FROM {betting_special} WHERE tid = %d', $array['tid']);
+      break;
+    }
+  }
+}
+
+/**
+* Vloží nové kurzy k hernímu uzlu.
+* 
+* @param (object)$node
+*/
+function betting_insert_courses($node) {
+  // musím zaručit stejný čas vložení u všech kurzů
+  $time = time();  
+  // vkládání kurzů (podle toho, kolik je účastníků)  
+  foreach ($node->course as $aid => $courses) {
+    foreach ($courses as $key => $value) {
+      if ($value['new']) {
+        db_query('INSERT INTO {betting_courses} (nid, eid, aid, time, course) VALUES (%d, %d, %d, %d, %f)', $node->nid, $key, $aid, $time, betting_float($value['new']));
+      }
+    }
+  }    
+}
+
+/**
+* Pomocná funkce k možnosti obnovit formulář bez odeslání
+* 
+* @param mixed $form
+* @param mixed $form_state
+*/
+function betting_form_refresh($form, &$form_state) {
+  $node = node_form_submit_build_node($form, $form_state);
+  $form_state['node_preview'] = '';
+}
+
+/**
+* Pokročení k dalšímu kroku
+* 
+* @param mixed $form
+* @param mixed $form_state
+*/
+function betting_form_next($form, &$form_state) {
+  // krok formluláře
+  $step = $form_state['values']['step'];
+  $form_state['values']['step'] = $step + 1;
+  // tady udělám další operace
+  if ($step == 2 && $form_state['values']['title_generate']) {
+    // jdu z druhého kroku ;)
+    // musím vygenerovat title ;)
+    $abonent1 = betting_get_abonent_all_names($form_state['values']['abonent'][1], 'name');
+    $abonent2 = betting_get_abonent_all_names($form_state['values']['abonent'][2], 'name');
+    $form_state['values']['title'] = $abonent1[0] . ' - ' . $abonent2[0];
+  }
+  $node = node_form_submit_build_node($form, $form_state);
+  $form_state['node_preview'] = '';
+}
+
+/**
+* Vynulování účastníků
+* 
+* @param mixed $form
+* @param mixed $form_state
+*/
+function betting_form_reset($form, &$form_state) {
+  $form_state['values']['step'] = 2;
+  if ($form_state['values']['title_generate']) {
+    $form_state['values']['title'] = '';
+  }
+  // vynuluji účastníky
+  $node = node_form_submit_build_node($form, $form_state);
+  $form_state['node_preview'] = '';
+}
+
+/**
+* Vrátí všechny abonenty dané kategorie uložené v systému.
+* 
+*/
+function betting_get_abonents($tid) {
+	static $abonents;
+  if (!$abonents) {
+    $result = db_query("SELECT n.nid, n.title FROM {node} n INNER JOIN {term_node} t ON t.nid = n.nid WHERE n.type = 'abonent' AND n.status = 1 AND t.tid = %d ORDER BY n.title ASC", $tid);
+    while ($row = db_fetch_object($result)) {
+      $abonents[$row->nid] = $row->title;
+    }  
+  }
+	return $abonents;
+}
+
+/**
+* Vrátím seznam účastníků nadřazené hry
+* 
+* @param mixed $nid
+* @return mixed
+*/
+function betting_get_abonents_by_nid($nid) {
+  static $abonents;
+  if (!$abonents) {
+    $result = db_query("SELECT pos, aid FROM {betting_attendance} WHERE nid = %d ORDER BY pos", $nid);
+    while ($row = db_fetch_object($result)) {
+      $abonents[$row->pos] = $row->aid;
+    }  
+  }  
+  return (array)$abonents;
+}
+
+
+function game_marking_tips_query() {
+  return 'SELECT ti.cid, c.eid, c.aid, c.nid, t.tid, t.status AS ticket_status, ti.status AS tip_status, t.points, t.uid
+    FROM {betting_ticket} t
+    INNER JOIN {betting_tips} ti ON ti.tid = t.tid
+    INNER JOIN {betting_courses} c ON c.cid = ti.cid WHERE c.nid = %d';
+}
+
+function game_marking_tips_condition($results, $row) {
+  return $results[$row->aid][$row->eid];
+}
+
+/**
+* Dle zadaných výsledků přiřadí uživateli vyhrané body, nebo naopak odebere.
+* 
+* @param mixed $nid
+* @param mixed $results
+*/
+function betting_mark_tips_on_node($node, $results) {
+  $query = module_invoke($node->type, 'marking_tips_query');
+  $result = db_query($query, $node->nid);
+  while ($row = db_fetch_object($result)) {
+    // je to správný tip
+    if (module_invoke($node->type, 'marking_tips_condition', $results, $row)) {
+     // tip ještě nebyl nastavován
+      if ($row->tip_status == 0 || $row->tip_status == 2) {
+        // nastavím ho jako správný
+        db_query('UPDATE {betting_tips} SET status = 1 WHERE cid = %d AND tid = %d', $row->cid, $row->tid);
+        if ($row->ticket_status == 0 || $row->tip_status == 2 || $row->ticket_status == 2) {
+          $tips = betting_tips_on_ticket($row->tid);
+          // nemá žádné probíhající ani špatné tipy
+          if ($tips['pending'] == 0 && $tips['failed'] == 0) {
+            // nastavím tiket za správný -> vyplatím body
+            db_query('UPDATE {betting_ticket} SET status = 1 WHERE tid = %d', $row->tid);
+            betting_set_user_points($row->uid, $row->points, '+', betting_product_course($row->tid));
+          }
+          elseif ($tips['failed'] == 0 && $row->ticket_status == 2) { // týká se jen toho co byl označen špatně
+            // nastavím tiket ze 2 na 0
+            db_query('UPDATE {betting_ticket} SET status = 0 WHERE tid = %d', $row->tid);
+          }
+        }        
+      }
+    }
+    else {
+      // pokud nebyl před tím označen, nebo byl, ale tiket stále probíhá - standardní procedura, nebo pokud byl označen za vítězný
+      if (($row->tip_status == 0 || $row->ticket_status == 0) || ($row->tip_status == 1 && $row->ticket_status == 1)) {
+        db_query('UPDATE {betting_tips} SET status = 2 WHERE cid = %d AND tid = %d', $row->cid, $row->tid);
+        db_query('UPDATE {betting_ticket} SET status = 2 WHERE tid = %d', $row->tid); 
+        // pokud byl před tím OK, odeberu ještě body
+        if ($row->tip_status == 1 && $row->ticket_status == 1) {
+          betting_set_user_points($row->uid, $row->points, '-', betting_product_course($row->tid));
+        }
+      }
+    }
+  }
+  // ještě přidat ukládání do Watchdogu
+}
+
+/**
+* Přídá nebo odebere určitý počet bodů od aktuálního počtu bodů uživatele.
+* Počet bodů je možné navýšit vynásobením v $multiple
+* 
+* @param mixed $points
+* @param mixed $op
+* @param mixed $multiple
+*/
+function betting_set_user_points($uid, $points, $op, $multiple = FALSE) {
+  // načtu aktuální počet bodů uživatele
+  $actual_points = _betting_load_user_points($uid);
+  if ($multiple) {
+    $points *= $multiple;
+  }
+  switch ($op) {
+    case '+':
+      $actual_points += $points;
+    break;
+    case '-':
+      $actual_points -= $points;
+    break;
+  }
+  _betting_save_user_points($uid, $actual_points);
+}
+
+
+/**
+* Vrátí počet tipů na lístku.
+* 
+* @param mixed $tid
+*/
+function betting_tips_on_ticket($tid) {
+  // test na počet probíhajících tipů
+  $pending = db_result(db_query("SELECT COUNT(*) FROM {betting_tips} WHERE tid = %d AND status = 0", $tid));
+  // test na počet špatných tipů
+  $failed = db_result(db_query("SELECT COUNT(*) FROM {betting_tips} WHERE tid = %d AND status = 2", $tid));
+  return array('pending' => $pending, 'failed' => $failed);
+}
+
+/**
+* Vrátí seznam eventualit v poli dle zadaných kritérií. Provede seřazení nejdříve 2 a následně více abonentů.
+* 
+* @param mixed $abonents
+* @param mixed $no_special
+*/
+function betting_get_eventualities($abonents = NULL, $is_special = NULL) {
+  if ($abonents && $abonents == 2) {
+    $where = 'WHERE (abonents = %d)';
+    if (!$is_special) {
+      $where .= ' AND special = 0';
+    }
+  }
+  elseif ($abonents) {
+    $where = 'WHERE (abonents > 2 AND abonents <= %d)';
+  }  
+  $result = db_query("SELECT * FROM {betting_eventuality} $where ORDER BY weight, abonents, eid", $abonents);
+  while ($row = db_fetch_object($result)) {
+    if ($row->abonents == 2) {
+      $eventuality_2[] = $row;
+    }
+    else {
+      $eventuality_more[] = $row;
+    }
+  }
+  return array_merge((array)$eventuality_2, (array)$eventuality_more);
+}
+
+/**
+* Rozšíření funkce user_load o static - vyšší výkon
+* 
+* @param mixed $uid
+*/
+function _betting_load_user_points($uid = NULL) {
+  if(!$uid) {
+    global $user;
+    $uid = $user->uid;
+  }
+  static $points, $UID;
+  if (!$points || $UID != $uid) {
+    $data = db_fetch_object(db_query('SELECT points FROM {betting_users} WHERE uid = %d', $uid));
+    $points = $data->points;
+    $UID = $uid;
+  }
+  return $points;
+}
+
+/**
+* Uloží požadovaný počet bodů ke konrkétnímu userovi
+* 
+* @param mixed $uid
+* @param mixed $points
+*/
+function _betting_save_user_points($uid, $points) {
+  db_query('REPLACE {betting_users} (uid, points) VALUES (%d, %d)', $uid, round($points));
+}
+
+/**
+* Vrátí aktuální status sázky podle čísledné hodnoty.
+* 
+* @param mixed $op
+* @return string
+*/
+function _betting_status($op) {
+  switch ($op) {
+    case 0:
+      $status = t('pending');
+      break;
+    case 1:
+      $status = t('win');
+      break;
+    case 2:
+      $status = t('miss');
+  }
+  return $status;
+}
+
+/**
+* Provede vynásobení kurzů mezi sebou.
+* 
+* @param mixed $tid
+* @return number
+*/
+function betting_product_course($tid) {
+  $result = db_query('SELECT c.course FROM {betting_courses} c INNER JOIN {betting_tips} t ON c.cid = t.cid WHERE t.tid = %d', $tid);
+  while ($row = db_fetch_object($result)) {
+    $courses[] = $row->course;
+  }
+  return array_product($courses);
+}
+
+/**
+* Převede zadané číslo na float formát.
+* 
+* @param mixed $str
+* @return float
+*/
+function betting_float($str) {
+	if (preg_match("/([0-9\.,-]+)/", $str, $match)) {
+		// Found number in $str, so set $str that number
+    $str = $match[0];            
+    if (strstr($str, ',')) {
+    	$str = str_replace(',', '.', $str);    // Convert , to . for floatval command
+      return floatval($str);
+    }
+    else {
+    	return floatval($str);
+    }
+  }
+  else {
+  	return $str;
+  }
+}
+
+/**
+* Vrátí speciální tagy kategorie (pokud jsou)
+* Aby nedocházelo k několikanásobnému volání SQL dotazu během jedné načtení stránky - STATIC
+* 
+* @param mixed $tid
+* @return object
+*/
+function _betting_get_specials($tid) {
+  static $specials;
+  if (!$specials) {
+    $specials = db_fetch_object(db_query('SELECT tie, multi FROM {betting_special} WHERE tid = %d', $tid));
+  }  
+  return $specials;
+}
+
+/**
+* Vrátí VID pro druh sportu a nebo typ utkání.
+* $type = 'sport' | $type = 'sort'
+* Tato procedura by byla možní dělat i při instalaci modulu.
+* 
+* @param mixed $type
+*/
+function betting_get_vid($type = 'sport') {
+  $vid = variable_get('betting_'.$type.'_vocabulary', '');
+  if (empty($vid)) {
+    if ($type == 'sport') {
+      $vocabulary = array('name' => t('Sport'), 'multiple' => '0', 'required' => '1', 'hierarchy' => '0', 'relations' => '0', 'module' => 'betting', 'nodes' => array('game' => 1, 'abonent' => 1));
+    }
+    else {
+      $vocabulary = array('name' => t('Type of game'), 'multiple' => '0', 'required' => '1', 'hierarchy' => '0', 'relations' => '0', 'module' => 'betting', 'nodes' => array('game' => 1));
+    }
+    taxonomy_save_vocabulary($vocabulary);
+    $vid = $vocabulary['vid'];
+    // uložím proměnnou
+    variable_set('betting_'.$type.'_vocabulary', $vid);
+  }
+
+  return $vid;
+}
+
+// ještě musím napsat funkci, která vytvoří základní termy do kategorie typ zápasu ;)
+
+/**
+* Vrátí požadovaný TID podle typu hry - MATCH nebo TOURNAMENT
+* 
+* @param mixed $type
+*/
+function _betting_get_sort_type($type = 'match') {
+  $tid = variable_get('betting_sort_'.$type, '');
+  if (empty($tid)) {
+    if ($type == 'match') {
+      $term = array(
+        'name' => t('Match'),
+        'vid' => betting_get_vid('sort'),
+        'description' => t('Just singe match.'),
+      );
+    }
+    else {
+      $term = array(
+        'name' => t('Tournament'),
+        'vid' => betting_get_vid('sort'),
+        'description' => t('Tournament that is contains many matches.'),
+      );
+    }
+    taxonomy_save_term($term);
+    $tid = $term['tid'];
+    variable_set('betting_sort_'.$type, $tid);
+  }
+  
+  return $tid;
+}
+
+/**
+* Setřídění pole podle jiného pole s klíči a pořadím - klíče jsou zachovány
+* 
+* @param mixed $to_sort
+* @param mixed $by_sort
+*/
+function _betting_sort_by_array($to_sort, $by_sort) {
+  asort($by_sort);  
+  foreach ($by_sort as $key => $pos) {
+    $sorted[$key] = $to_sort[$key];
+  }
+  return $sorted;
+}
+
+/**
+ * @return array of translated month names with numeric index.
+ */
+function _betting_dateselect_months() {
+  return array('01' => t('!long-month-name January', array('!long-month-name' => '')), '02' => t('!long-month-name February', array('!long-month-name' => '')), '03' => t('!long-month-name March',array('!long-month-name' => '')), '04' => t('!long-month-name April', array('!long-month-name' => '')), '05' => t('!long-month-name May', array('!long-month-name' => '')), '06' => t('!long-month-name June', array('!long-month-name' => '')), '07' => t('!long-month-name July', array('!long-month-name' => '')), '08' => t('!long-month-name August',array('!long-month-name' => '')), '09' => t('!long-month-name September', array('!long-month-name' => '')), '10' => t('!long-month-name October', array('!long-month-name' => '')), '11' => t('!long-month-name November', array('!long-month-name' => '')), '12' => t('!long-month-name December', array('!long-month-name' => '')));
+}
+
+/**
+* Funkce na zkonvertování data do pole
+* 
+* @param array $date
+* @return string
+*/
+function betting_explode_date($timestemp) {
+  $return['year'] = format_date($timestemp, 'custom', 'Y');
+  $return['month'] = format_date($timestemp, 'custom', 'm');
+  $return['day'] = format_date($timestemp, 'custom', 'd');
+  $return['hour'] = format_date($timestemp, 'custom', 'H');
+  $return['minute'] = format_date($timestemp, 'custom', 'i');
+  $return['second'] = format_date($timestemp, 'custom', 's');
+  return $return;
+}
+
+function betting_unix_date_format($date) {
+  global $user;  
+  if (variable_get('configurable_timezones', 1) && $user->uid && strlen($user->timezone)) {
+    $TZ = $user->timezone;
+  }
+  else {
+    $TZ = variable_get('date_default_timezone', 0);
+  }  
+  if (!isset($date['second'])) {
+    $date['second'] = '00';
+  }
+  return strtotime($date['year'] .'-'. $date['month'] .'-'. $date['day'] .' '. $date['hour'] .':'. $date['minute'] .':'. $date['second'].' '.sprintf('%s%02d%02d', ($TZ < 0 ? '-' : '+'), abs($TZ / 3600), abs($TZ % 3600) / 60));
+}
+
+/**
+* Pro položky, které jsou vyžadované, ale prochází vlastní validací
+* 
+*/
+function _betting_required_value() {
+  return '<span class="form-required" title="'. t('This field is required.') .'">*</span>';
+}
+
+/**
+* Vymaže neplatné (proběhlé tipy z tiketu uživatele)
+* 
+* @param mixed $to_delete
+*/
+function _betting_delete_user_tips($to_delete) {
+  global $user;  
+  if ($to_delete) {
+    foreach ($to_delete as $nid) {
+      unset($user->ticket[$nid]);
+    }
+    user_save($user, array('ticket' => $user->ticket));
+  }
+}
+
+/**
+* Vrátím seznam typů her
+* 
+*/
+function betting_gametypes($sql = FALSE) {
+  static $types;
+  if (!$types) {
+    $result = db_query('SELECT type FROM {betting_gametypes}');
+    while ($row = db_fetch_object($result)) {
+      if ($sql) {
+        $type = "'$row->type'";
+      }
+      else {
+        $type = $row->type;
+      }
+      $types[] = $type;
+    }
+  }
+  return $types;
+}
+
+/**
+* Nachází se typ uzlu na seznamu her?
+* Velice optimalizovaný pro rychlost :)
+* 
+* @param mixed $type
+*/
+function betting_is_gametype($type) {
+  static $find, $type_saved;
+  if (!$find || $type != $type_saved) {
+    $find = db_result(db_query('SELECT COUNT(type) FROM {betting_gametypes} WHERE type = "%s"', $type));
+    $type_saved = $type;
+  }
+  return $find;
+}
+
+/**
+* Vložit typ uzlu na seznam herních uzlu gametype.
+* 
+* @param mixed $type
+* @param mixed $description
+*/
+function betting_add_gametype($type) {
+  db_query('REPLACE INTO {betting_gametypes} (type) VALUES ("%s")', $type);
+}
+
+/**
+* Odstraní hru ze seznamu.
+* 
+* @param mixed $type
+*/
+function betting_remove_gametype($type) {
+  db_query('DELETE FROM {betting_gametypes} WHERE type = "%s"', $type);
+}
+
+function betting_single_add_course_link($nid, $attributes = array()) {
+  return ' ' . l('<img src="' . base_path() . drupal_get_path('module', 'betting') . '/images/mini-edit.png" alt="'.t('Add new course').'" title="'.t('Add new course').'" />', 'add-course/' . $nid . ($attributes ? '/' . implode('-', $attributes) : ''), array('html' => TRUE));
+}
+
+function betting_single_add_edit_link($nid) {
+  return ' ' . l('<img src="' . base_path() . drupal_get_path('module', 'betting') . '/images/mini-edit.png" alt="'.t('Edit game').'" title="'.t('Edit game').'" />', 'node/' . $nid . '/edit', array('html' => TRUE));
+}
+
+/**
+* Načte název abonenta dle jeho IDU
+* Lze zvolit, zda se mají načíst všechny názvy $op = 'all'
+* Jen aliasy $op = 'alias'
+* Anebo jen hlavní jméno $op = 'name'
+* 
+* @param mixed $aid
+* @param mixed $op
+*/
+function betting_get_abonent_all_names($aid, $op = 'alias') {
+  // načtu i základní jméno - tedy $node->title
+  if ($op == 'name' || $op = 'all') {
+    $names[] = db_result(db_query('SELECT title FROM {node} WHERE type = "abonent" AND nid = %d', $aid));
+  }
+  if ($op == 'all' || $op == 'alias') {
+    $result = db_query('SELECT alias FROM {betting_alias} WHERE aid = %d', $aid);
+    while ($row = db_fetch_object($result)) {
+      $names[] = $row->alias;
+    }
+  }
+  return $names;
+}
+
+/**
+* Pomocná AJAX funkce pro získání informací o sportu
+* 
+* @param mixed $tid
+*/
+function betting_get_sports_values($tid) {
+  $specials = _betting_get_specials($tid);
+  if ($tid == _betting_get_sort_type('tournament')) {
+    $matches[] = 'more-teams';
+  }
+  elseif ($specials->multi) {
+    $matches[] = 'more-teams';
+  }
+  elseif ($tid == _betting_get_sort_type('match')) {
+    $matches[] = 'two-teams';
+  }
+  elseif ($tid > 0 && !$specials->multi) {
+    $matches[] = 'two-teams';
+  }
+  else {
+    $matches[] = 'failed';
+  }
+  drupal_json($matches);
+}
+
+/**
+* Modul Betting System a všechny jeho součásti jsou majetkem Petra Řezníčka (posta@petrreznicek.cz).
+* Jakékoliv úpravy a další používání bez souhlasu autora budou považovány za porušení zákona č. 121/2000 Sb. 
+* (C) 2009 Petr 'kecinzer' Řezníček
+*/
